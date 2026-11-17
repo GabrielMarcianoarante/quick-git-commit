@@ -3,7 +3,7 @@
   "displayName": "Quick Git Commit",
   "description": "%ext.description%",
   "version": "0.3.3",
-  "publisher": "local",
+  "publisher": "GabrielMarcianoarante",
   "license": "PolyForm-Noncommercial-1.0.0",
   "engines": {
     "vscode": "^1.85.0"
@@ -238,7 +238,8 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package --allow-missing-repository"
+    "package": "vsce package --baseImagesUrl https://raw.githubusercontent.com/GabrielMarcianoarante/quick-git-commit/main/",
+    "publish": "vsce publish --baseImagesUrl https://raw.githubusercontent.com/GabrielMarcianoarante/quick-git-commit/main/"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
@@ -268,5 +269,6 @@
   "bugs": {
     "url": "https://github.com/GabrielMarcianoarante/quick-git-commit/issues"
   },
-  "homepage": "https://github.com/GabrielMarcianoarante/quick-git-commit#readme"
+  "homepage": "https://github.com/GabrielMarcianoarante/quick-git-commit#readme",
+  "pricing": "Free"
 }
