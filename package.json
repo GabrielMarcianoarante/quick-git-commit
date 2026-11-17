@@ -1,8 +1,8 @@
 {
   "name": "quick-git-commit",
   "displayName": "Quick Git Commit",
-  "description": "Git visual e simples dentro do VS Code: commits padronizados, sincronizar, rebase/merge e histórico, sem digitar comandos.",
-  "version": "0.1.0",
+  "description": "%ext.description%",
+  "version": "0.3.3",
   "publisher": "local",
   "license": "PolyForm-Noncommercial-1.0.0",
   "engines": {
@@ -31,24 +31,208 @@
         {
           "type": "webview",
           "id": "quickGitCommit.panel",
-          "name": "Painel Git"
+          "name": "%view.panel%"
         }
       ]
     },
     "commands": [
       {
         "command": "quickGitCommit.run",
-        "title": "Quick Git: Fazer commit rápido"
+        "title": "%cmd.run%",
+        "icon": "$(git-commit)"
       },
       {
         "command": "quickGitCommit.openPanel",
-        "title": "Quick Git: Abrir painel"
+        "title": "%cmd.openPanel%"
       },
       {
         "command": "quickGitCommit.refresh",
-        "title": "Quick Git: Atualizar painel"
+        "title": "%cmd.refresh%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "quickGitCommit.guide",
+        "title": "%cmd.guide%"
+      },
+      {
+        "command": "quickGitCommit.fetch",
+        "title": "%cmd.fetch%"
+      },
+      {
+        "command": "quickGitCommit.pull",
+        "title": "%cmd.pull%"
+      },
+      {
+        "command": "quickGitCommit.push",
+        "title": "%cmd.push%"
+      },
+      {
+        "command": "quickGitCommit.stageFile",
+        "title": "%cmd.stageFile%"
       }
-    ]
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "quickGitCommit.stageFile",
+          "group": "quickGit@1"
+        },
+        {
+          "command": "quickGitCommit.run",
+          "group": "quickGit@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "quickGitCommit.stageFile",
+          "when": "resourceScheme == file",
+          "group": "quickGit@1"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "quickGitCommit.stageFile",
+          "when": "resourceScheme == file",
+          "group": "quickGit@1"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "quickGitCommit.run",
+          "when": "scmProvider == git",
+          "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "quickGitCommit.run",
+          "when": "view == quickGitCommit.panel",
+          "group": "navigation@1"
+        },
+        {
+          "command": "quickGitCommit.refresh",
+          "when": "view == quickGitCommit.panel",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "quickGitCommit.stageFile",
+          "when": "editorIsOpen"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "quickGitCommit.openPanel",
+        "key": "ctrl+alt+g g",
+        "mac": "cmd+alt+g g"
+      },
+      {
+        "command": "quickGitCommit.run",
+        "key": "ctrl+alt+g c",
+        "mac": "cmd+alt+g c"
+      },
+      {
+        "command": "quickGitCommit.fetch",
+        "key": "ctrl+alt+g f",
+        "mac": "cmd+alt+g f"
+      },
+      {
+        "command": "quickGitCommit.pull",
+        "key": "ctrl+alt+g l",
+        "mac": "cmd+alt+g l"
+      },
+      {
+        "command": "quickGitCommit.push",
+        "key": "ctrl+alt+g p",
+        "mac": "cmd+alt+g p"
+      },
+      {
+        "command": "quickGitCommit.stageFile",
+        "key": "ctrl+alt+g s",
+        "mac": "cmd+alt+g s",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "%cfg.title%",
+      "properties": {
+        "quickGitCommit.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "pt-BR",
+            "en"
+          ],
+          "default": "auto",
+          "description": "%cfg.language%"
+        },
+        "quickGitCommit.commitTypes": {
+          "type": "array",
+          "default": [
+            "feat",
+            "fix",
+            "docs",
+            "style",
+            "refactor",
+            "chore"
+          ],
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][\\w.-]*$"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "label"
+                ],
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][\\w.-]*$"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
+          "description": "%cfg.commitTypes%"
+        },
+        "quickGitCommit.messageMaxLength": {
+          "type": "integer",
+          "default": 72,
+          "minimum": 0,
+          "description": "%cfg.messageMaxLength%"
+        },
+        "quickGitCommit.askBranch": {
+          "type": "boolean",
+          "default": true,
+          "description": "%cfg.askBranch%"
+        },
+        "quickGitCommit.defaultAction": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "commit",
+            "commitAndPush"
+          ],
+          "enumDescriptions": [
+            "%cfg.defaultAction.ask%",
+            "%cfg.defaultAction.commit%",
+            "%cfg.defaultAction.commitAndPush%"
+          ],
+          "default": "ask",
+          "description": "%cfg.defaultAction%"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

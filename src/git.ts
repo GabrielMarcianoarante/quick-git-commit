@@ -5,6 +5,14 @@ import * as path from 'path';
 // ---------- Execução de comandos Git ----------
 
 let logger: (line: string) => void = () => undefined;
+let authEnv: () => Promise<Record<string, string> | undefined> = async () => undefined;
+
+/** Permite entregar ao Git o login do GitHub feito no VS Code (apenas para comandos de rede). */
+export function setGitAuth(fn: () => Promise<Record<string, string> | undefined>): void {
+  authEnv = fn;
+}
+
+const NETWORK_COMMANDS = new Set(['fetch', 'pull', 'push', 'ls-remote', 'clone']);
 
 export function setGitLogger(fn: (line: string) => void): void {
   logger = fn;
@@ -22,7 +30,8 @@ interface RunOptions {
   raw?: boolean;
 }
 
-export function git(cwd: string, args: string[], options: RunOptions = {}): Promise<string> {
+export async function git(cwd: string, args: string[], options: RunOptions = {}): Promise<string> {
+  const extra = NETWORK_COMMANDS.has(args[0]) ? await authEnv().catch(() => undefined) : undefined;
   return new Promise((resolve, reject) => {
     logger(`$ git ${args.join(' ')}`);
     execFile(
@@ -39,6 +48,7 @@ export function git(cwd: string, args: string[], options: RunOptions = {}): Prom
           GIT_OPTIONAL_LOCKS: '0',
           LANGUAGE: 'en',
           LC_MESSAGES: 'C',
+          ...extra,
         },
       },
       (error, stdout, stderr) => {
@@ -111,8 +121,28 @@ export interface CommitInfo {
   date: string;
   subject: string;
   refs: RefChip[];
+  parents: string[];
   merge: boolean;
+  /** Existe só aqui: ainda não foi enviado para a nuvem. */
   unpushed: boolean;
+  /** Existe na nuvem, mas ainda não foi trazido para a branch atual. */
+  incoming: boolean;
+  /** É o commit em que você está agora (HEAD). */
+  head: boolean;
+}
+
+export interface CommitFile {
+  status: 'M' | 'A' | 'D' | 'R' | 'C' | 'T';
+  path: string;
+  oldPath?: string;
+}
+
+export interface CommitDetails {
+  hash: string;
+  body: string;
+  files: CommitFile[];
+  insertions: number;
+  deletions: number;
 }
 
 export type Operation = 'none' | 'rebase' | 'merge';
@@ -136,7 +166,7 @@ export interface RepoState extends SyncInfo {
   conflicts: string[];
   branches: { local: string[]; remote: string[] };
   history: CommitInfo[];
-  incoming: CommitInfo[];
+  headHash: string;
   canUndoCommit: boolean;
 }
 
@@ -246,19 +276,13 @@ export async function listBranches(root: string): Promise<{ local: string[]; rem
 
 const LOG_FORMAT = '%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%D%x1f%P%x1e';
 
-async function readLog(
-  root: string,
-  range: string[],
-  limit: number,
+export function parseLog(
+  out: string,
   remotes: Set<string>,
-  unpushedCount: number
-): Promise<CommitInfo[]> {
-  let out: string;
-  try {
-    out = await git(root, ['log', ...range, '-n', String(limit), `--pretty=format:${LOG_FORMAT}`], { raw: true });
-  } catch {
-    return [];
-  }
+  unpushed: Set<string>,
+  incoming: Set<string>,
+  headHash: string
+): CommitInfo[] {
   const commits: CommitInfo[] = [];
   const records = out.split('\x1e');
   for (const record of records) {
@@ -284,6 +308,7 @@ async function readLog(
         refs.push({ name: p, kind: remotes.has(p) ? 'remote' : 'branch', head: false });
       }
     }
+    const parents = f[6].trim().split(/\s+/).filter(Boolean);
     commits.push({
       hash: f[0],
       short: f[1],
@@ -291,11 +316,84 @@ async function readLog(
       date: f[3],
       subject: f[4],
       refs,
-      merge: f[6].trim().split(/\s+/).filter(Boolean).length > 1,
-      unpushed: commits.length < unpushedCount,
+      parents,
+      merge: parents.length > 1,
+      unpushed: unpushed.has(f[0]),
+      incoming: incoming.has(f[0]),
+      head: f[0] === headHash,
     });
   }
   return commits;
+}
+
+async function hashSet(root: string, range: string[]): Promise<Set<string>> {
+  try {
+    const out = await git(root, ['rev-list', ...range]);
+    return new Set(out.split('\n').filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+/** Histórico de todas as branches (base do gráfico), em ordem topológica. */
+export async function readHistory(root: string, limit: number, remotes: Set<string>, hasUpstream: boolean): Promise<{ history: CommitInfo[]; headHash: string }> {
+  let out: string;
+  try {
+    out = await git(root, ['log', '--all', '--topo-order', '-n', String(limit), `--pretty=format:${LOG_FORMAT}`], { raw: true });
+  } catch {
+    return { history: [], headHash: '' };
+  }
+  const headHash = await git(root, ['rev-parse', 'HEAD']).catch(() => '');
+  const [unpushed, incoming] = hasUpstream
+    ? await Promise.all([hashSet(root, ['@{u}..HEAD']), hashSet(root, ['HEAD..@{u}'])])
+    : [await hashSet(root, ['HEAD', '--not', '--remotes']), new Set<string>()];
+  return { history: parseLog(out, remotes, unpushed, incoming, headHash), headHash };
+}
+
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+
+export function parseNameStatus(raw: string): CommitFile[] {
+  const parts = raw.split('\0').filter((p) => p !== '');
+  const files: CommitFile[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const code = parts[i];
+    const letter = code[0] as CommitFile['status'];
+    if (letter === 'R' || letter === 'C') {
+      files.push({ status: letter, oldPath: parts[i + 1], path: parts[i + 2] });
+      i += 2;
+    } else {
+      files.push({ status: letter, path: parts[i + 1] });
+      i += 1;
+    }
+  }
+  return files.filter((f) => f.path);
+}
+
+export function isHash(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{7,40}$/i.test(value);
+}
+
+/** Arquivos alterados por um commit (em relação ao primeiro pai). */
+export async function readCommitDetails(root: string, hash: string): Promise<CommitDetails> {
+  if (!isHash(hash)) {
+    throw new GitError('Commit inválido.');
+  }
+  const parent = await git(root, ['rev-parse', '--verify', '-q', `${hash}^1`]).catch(() => '');
+  const base = parent || EMPTY_TREE;
+  const [body, namesRaw, shortstat] = await Promise.all([
+    git(root, ['log', '-1', '--format=%b', hash]),
+    git(root, ['diff', '--name-status', '-M', '-z', base, hash], { raw: true }),
+    git(root, ['diff', '--shortstat', base, hash]),
+  ]);
+  const ins = /(\d+) insertion/.exec(shortstat);
+  const del = /(\d+) deletion/.exec(shortstat);
+  return {
+    hash,
+    body: body.trim(),
+    files: parseNameStatus(namesRaw),
+    insertions: ins ? parseInt(ins[1], 10) : 0,
+    deletions: del ? parseInt(del[1], 10) : 0,
+  };
 }
 
 export async function readState(root: string): Promise<RepoState> {
@@ -312,12 +410,9 @@ export async function readState(root: string): Promise<RepoState> {
   const remoteSet = new Set(branches.remote);
 
   let history: CommitInfo[] = [];
-  let incoming: CommitInfo[] = [];
+  let headHash = '';
   if (hasCommits) {
-    history = await readLog(root, ['HEAD'], 40, remoteSet, sync.upstream ? sync.ahead : 0);
-    if (sync.upstream && sync.behind > 0) {
-      incoming = await readLog(root, ['HEAD..@{u}'], 20, remoteSet, 0);
-    }
+    ({ history, headHash } = await readHistory(root, 60, remoteSet, !!sync.upstream));
   }
 
   return {
@@ -333,7 +428,7 @@ export async function readState(root: string): Promise<RepoState> {
     conflicts: files.filter((f) => f.conflict).map((f) => f.path),
     branches,
     history,
-    incoming,
+    headHash,
     canUndoCommit: hasCommits && !!sync.upstream && sync.ahead > 0 && operation === 'none',
   };
 }

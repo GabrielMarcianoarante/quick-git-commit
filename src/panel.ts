@@ -1,8 +1,13 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { getConfig, settingsPayload } from './config';
+import { currentLang, tr, ui } from './i18n';
 import {
   git,
+  isHash,
+  readCommitDetails,
   gitOk,
   getRepoRoot,
   getSync,
@@ -14,7 +19,7 @@ import {
 } from './git';
 
 export const DIFF_SCHEME = 'qgc-git';
-const COMMIT_TYPES = ['feat', 'fix', 'docs', 'style', 'refactor', 'chore'];
+const ONBOARDING_KEY = 'quickGitCommit.onboardingDone';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Payload = Record<string, any>;
@@ -60,11 +65,17 @@ function friendly(raw: string): string {
 export class GitContentProvider implements vscode.TextDocumentContentProvider {
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     try {
-      const q = JSON.parse(uri.query) as { root: string; ref: 'HEAD' | 'index' | 'none'; file: string };
+      const q = JSON.parse(uri.query) as { root: string; ref: 'HEAD' | 'index' | 'none' | 'rev'; file: string; rev?: string };
       if (q.ref === 'none') {
         return '';
       }
-      const spec = q.ref === 'HEAD' ? `HEAD:${q.file}` : `:${q.file}`;
+      let spec = q.ref === 'HEAD' ? `HEAD:${q.file}` : `:${q.file}`;
+      if (q.ref === 'rev') {
+        if (!isHash(q.rev)) {
+          return '';
+        }
+        spec = `${q.rev}:${q.file}`;
+      }
       return await git(q.root, ['show', spec], { raw: true });
     } catch {
       return '';
@@ -76,6 +87,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
   static readonly viewType = 'quickGitCommit.panel';
 
   private view?: vscode.WebviewView;
+  private htmlKey = '';
   private chain: Promise<void> = Promise.resolve();
   private pending = 0;
   private lastJson = '';
@@ -85,7 +97,8 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly output: vscode.OutputChannel
+    private readonly output: vscode.OutputChannel,
+    private readonly globalState: vscode.Memento
   ) {
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
     const schedule = (): void => this.scheduleRefresh();
@@ -147,8 +160,14 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
     const css = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'main.css'));
     const js = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'main.js'));
+    const i18nJs = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'i18n.js'));
+    const payload = settingsPayload();
+    this.htmlKey = payload.lang + JSON.stringify(payload.types);
+    const lang = payload.lang;
+    const cfg = encodeURIComponent(JSON.stringify(payload));
+    const graphJs = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'graph.js'));
     return /* html */ `<!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="${lang === 'en' ? 'en' : 'pt-BR'}">
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
@@ -156,17 +175,30 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
   <link rel="stylesheet" href="${css}">
   <title>Quick Git</title>
 </head>
-<body>
+<body data-cfg="${cfg}">
+  <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
   <div id="busy" class="busy hidden" role="status" aria-live="polite">
     <div class="spinner"></div>
     <div id="busyText"></div>
   </div>
 
   <div id="app">
-    <header id="top" class="top">
-      <div class="repoLine">
-        <span id="repoName" class="repoName"></span>
+    <div class="repoLine bar">
+      <span id="repoName" class="repoName"></span>
+      <span class="topTools">
+        <button id="btnGuide" class="iconBtn" type="button" title="Guia inicial" aria-label="Abrir o guia inicial"></button>
+        <button id="btnSettings" class="iconBtn" type="button" title="Configurações" aria-label="Abrir configurações" aria-pressed="false"></button>
         <button id="btnRefresh" class="iconBtn" type="button" title="Atualizar a tela" aria-label="Atualizar a tela"></button>
+      </span>
+    </div>
+    <div id="settings" class="settings hidden"></div>
+    <header id="top" class="top">
+      <div class="modeRow">
+        <div class="seg" role="radiogroup" aria-label="Modo de exibição">
+          <button id="modeSimple" class="segBtn" type="button" role="radio" data-mode="simple">Simples</button>
+          <button id="modeAdvanced" class="segBtn" type="button" role="radio" data-mode="advanced">Avançado</button>
+        </div>
+        <p id="modeHint" class="hint modeHint"></p>
       </div>
       <div class="branchRow">
         <span class="branchIcon" data-icon="branch"></span>
@@ -175,24 +207,25 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       </div>
     </header>
 
+    <div id="onboard" class="hidden"></div>
     <div id="notRepo" class="card hidden"></div>
     <div id="banner"></div>
 
     <main id="main" class="hidden">
       <details class="section" data-key="sync" open>
-        <summary><span class="sTitle" data-icon="cloud">Sincronizar com a nuvem</span><span id="syncBadge" class="badges"></span></summary>
+        <summary id="secSync"><span class="sTitle" data-icon="cloud">Sincronizar com a nuvem</span><span id="syncBadge" class="badges"></span></summary>
         <div id="syncBody" class="sBody"></div>
       </details>
 
       <details class="section" data-key="changes" open>
-        <summary><span class="sTitle" data-icon="file">Minhas alterações</span><span id="changesBadge" class="badges"></span></summary>
+        <summary id="secChanges"><span class="sTitle" data-icon="file">Minhas alterações</span><span id="changesBadge" class="badges"></span></summary>
         <div class="sBody">
           <div id="filesList"></div>
           <div class="commitForm">
             <div class="label">1. Que tipo de mudança é essa?</div>
             <div id="typePills" class="pills" role="radiogroup" aria-label="Tipo do commit"></div>
             <label class="label" for="msgInput">2. Descreva o que você fez</label>
-            <input id="msgInput" type="text" placeholder="ex.: adiciona tela de login" autocomplete="off" spellcheck="true">
+            <input id="msgInput" type="text" aria-describedby="msgCount commitHint" placeholder="ex.: adiciona tela de login" autocomplete="off" spellcheck="true">
             <div class="counter"><span id="msgCount">0/72</span></div>
             <textarea id="detailsInput" rows="2" placeholder="Detalhes (opcional)" aria-label="Detalhes opcionais"></textarea>
             <div id="commitHint" class="hint"></div>
@@ -205,26 +238,125 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       </details>
 
       <details class="section" data-key="update">
-        <summary><span class="sTitle" data-icon="merge">Atualizar minha branch</span></summary>
+        <summary id="secUpdate"><span class="sTitle" data-icon="merge">Atualizar minha branch</span></summary>
         <div class="sBody">
           <p class="hint">Traga para a sua branch as novidades de outra (por exemplo, a <b>main</b>), sem perder o seu trabalho.</p>
-          <label class="label" for="baseSelect">Trazer novidades de:</label>
+          <label id="baseLabel" class="label" for="baseSelect">Trazer novidades de:</label>
           <select id="baseSelect" aria-label="Branch de origem das novidades"></select>
           <div id="updateBody"></div>
         </div>
       </details>
 
       <details class="section" data-key="history" open>
-        <summary><span class="sTitle" data-icon="history">Histórico</span><span id="historyBadge" class="badges"></span></summary>
+        <summary id="secHistory"><span class="sTitle" data-icon="history">Histórico</span><span id="historyBadge" class="badges"></span></summary>
         <div class="sBody">
           <div id="historyBody"></div>
         </div>
       </details>
     </main>
   </div>
+  <script nonce="${nonce}" src="${i18nJs}"></script>
+  <script nonce="${nonce}" src="${graphJs}"></script>
   <script nonce="${nonce}" src="${js}"></script>
 </body>
 </html>`;
+  }
+
+  /** Recarrega o painel (idioma/configurações mudaram). */
+  reload(): void {
+    if (this.view) {
+      this.view.webview.html = this.html(this.view.webview);
+    }
+  }
+
+  /** Executa uma ação do painel (fetch, pull, push) por comando/atalho. */
+  action(name: string): void {
+    void this.onMessage({ type: 'action', name });
+  }
+
+  /** Configuração mudou (painel ou settings.json): idioma/prefixos recarregam o painel; o resto é aplicado ao vivo. */
+  onConfigChanged(): void {
+    if (!this.view) {
+      return;
+    }
+    const p = settingsPayload();
+    if (p.lang + JSON.stringify(p.types) !== this.htmlKey) {
+      this.reload();
+    } else {
+      this.post({ type: 'config', cfg: p });
+    }
+  }
+
+  private async setSetting(key: string, value: unknown): Promise<void> {
+    let v: unknown;
+    if (key === 'language' && ['auto', 'pt-BR', 'en'].includes(String(value))) {
+      v = String(value);
+    } else if (key === 'defaultAction' && ['ask', 'commit', 'commitAndPush'].includes(String(value))) {
+      v = String(value);
+    } else if (key === 'askBranch') {
+      v = value === true;
+    } else if (key === 'messageMaxLength') {
+      const n = Math.floor(Number(value));
+      if (!Number.isFinite(n) || n < 0 || n > 500) {
+        void ui.warn('Limite inválido. Use um número de 0 a 500.');
+        this.onConfigChanged();
+        return;
+      }
+      v = n;
+    } else if (key === 'commitTypes') {
+      const ids = String(value).split(/[,\s]+/).filter(Boolean);
+      const valid = ids.filter((id, i) => /^[A-Za-z0-9][\w.-]*$/.test(id) && ids.indexOf(id) === i);
+      if (valid.length === 0 || ids.some((id) => !/^[A-Za-z0-9][\w.-]*$/.test(id))) {
+        void ui.warn('Informe pelo menos um prefixo válido (letras, números, ponto, hífen).');
+        this.onConfigChanged();
+        return;
+      }
+      const old = getConfig().types;
+      v = valid.map((id) => {
+        const d = old.find((t) => t.id === id)?.description;
+        return d ? { label: id, description: d } : id;
+      });
+    } else {
+      return;
+    }
+    await vscode.workspace.getConfiguration('quickGitCommit').update(key, v, vscode.ConfigurationTarget.Global);
+  }
+
+  private async resetSettings(): Promise<void> {
+    const ok = await ui.warn(
+      'Restaurar as configurações padrão?',
+      { modal: true, detail: 'Seus prefixos, limite e idioma voltam ao original.' },
+      'Restaurar'
+    );
+    if (ok !== 'Restaurar') {
+      return;
+    }
+    const c = vscode.workspace.getConfiguration('quickGitCommit');
+    for (const k of ['language', 'commitTypes', 'messageMaxLength', 'askBranch', 'defaultAction']) {
+      await c.update(k, undefined, vscode.ConfigurationTarget.Global);
+    }
+    this.toast('Configurações restauradas ✔');
+  }
+
+  /** Marca arquivos para o commit (menu de contexto do Explorer/editor). */
+  async stageUris(uris: vscode.Uri[]): Promise<void> {
+    const root = await this.getRoot();
+    if (!root) {
+      void ui.error('Quick Git: abra uma pasta que seja um repositório Git.');
+      return;
+    }
+    const paths = uris
+      .filter((u) => u.scheme === 'file')
+      .map((u) => path.relative(root, u.fsPath).split(path.sep).join('/'))
+      .filter((p) => p && !p.startsWith('..'));
+    if (paths.length === 0) {
+      void ui.info('Nenhum arquivo para marcar.');
+      return;
+    }
+    void this.enqueue(undefined, async (r) => {
+      await this.doStage(r, paths, true);
+      this.toast('Arquivo marcado para o commit ✔');
+    });
   }
 
   private post(message: Payload): void {
@@ -257,6 +389,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       } else {
         state = await readState(root);
       }
+      state.onboarding = await this.onboardingInfo(root, !!folders?.length);
       const json = JSON.stringify(state);
       if (!force && json === this.lastJson) {
         return;
@@ -266,7 +399,8 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.output.appendLine(`Erro ao ler o estado: ${message}`);
-      const state = { isRepo: false, hasFolder: true, error: friendly(message) };
+      const state: Payload = { isRepo: false, hasFolder: true, error: friendly(message) };
+      state.onboarding = await this.onboardingInfo(undefined, true).catch(() => undefined);
       this.lastJson = '';
       this.post({ type: 'state', state });
     }
@@ -297,7 +431,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
           return;
         }
         if (!root) {
-          void vscode.window.showWarningMessage('Quick Git: abra uma pasta que seja um repositório Git.');
+          void ui.warn('Quick Git: abra uma pasta que seja um repositório Git.');
           return;
         }
         if (label) {
@@ -324,7 +458,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
   private showError(e: unknown): void {
     const raw = e instanceof Error ? e.message : String(e);
     this.output.appendLine(`ERRO: ${raw}`);
-    void vscode.window.showErrorMessage(`Quick Git: ${friendly(raw)}`, 'Ver detalhes').then((pick) => {
+    void ui.error(`Quick Git: ${friendly(raw)}`, 'Ver detalhes').then((pick) => {
       if (pick) {
         this.output.show(true);
       }
@@ -332,7 +466,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
   }
 
   private toast(text: string): void {
-    void vscode.window.showInformationMessage(`Quick Git: ${text}`);
+    void ui.info(`Quick Git: ${tr(text)}`);
   }
 
   private async onMessage(msg: Payload): Promise<void> {
@@ -345,6 +479,15 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     }
     const p: Payload = msg.payload ?? {};
     switch (msg.name) {
+      case 'setSetting':
+        await this.setSetting(String(p.key), p.value);
+        break;
+      case 'resetSettings':
+        await this.resetSettings();
+        break;
+      case 'openVsSettings':
+        await vscode.commands.executeCommand('workbench.action.openSettings', 'quickGitCommit');
+        break;
       case 'refresh':
         await this.refresh(true);
         break;
@@ -408,6 +551,31 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       case 'undoCommit':
         void this.enqueue('Desfazendo commit...', (r) => this.doUndoCommit(r));
         break;
+      case 'commitDetails':
+        void this.enqueue(undefined, (r) => this.sendCommitDetails(r, String(p.hash ?? '')));
+        break;
+      case 'openCommitDiff':
+        void this.enqueue(undefined, (r) => this.openCommitDiff(r, String(p.hash ?? ''), String(p.path ?? '')));
+        break;
+      case 'ob.identity':
+        await this.setIdentity();
+        break;
+      case 'ob.github':
+        await this.githubSignIn();
+        break;
+      case 'ob.createRepo':
+        void this.enqueue('Criando repositório no GitHub...', (r) => this.createGithubRepo(r));
+        break;
+      case 'ob.finish':
+        await this.globalState.update(ONBOARDING_KEY, true);
+        await this.refresh(true);
+        break;
+      case 'ob.openGit':
+        void vscode.env.openExternal(vscode.Uri.parse('https://git-scm.com/downloads'));
+        break;
+      case 'ob.openFolder':
+        void vscode.commands.executeCommand('workbench.action.files.openFolder');
+        break;
       default:
         break;
     }
@@ -420,7 +588,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     if (!folder) {
       return;
     }
-    const pick = await vscode.window.showInformationMessage(
+    const pick = await ui.info(
       'Criar um repositório Git nesta pasta?',
       { modal: true, detail: 'Isso começa o controle de versões do seu projeto. Nada é enviado para a internet.' },
       'Criar repositório'
@@ -452,7 +620,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
 
   /** Pede a URL e liga o projeto a um repositório online. Retorna o nome do remoto. */
   private async addRemote(root: string): Promise<string | undefined> {
-    const url = await vscode.window.showInputBox({
+    const url = await ui.input({
       title: 'Conectar à nuvem',
       prompt: 'Cole o endereço (URL) do repositório online (GitHub, GitLab...)',
       placeHolder: 'https://github.com/usuario/projeto.git',
@@ -509,7 +677,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       return;
     }
     if (s.behind > 0) {
-      const choice = await vscode.window.showWarningMessage(
+      const choice = await ui.warn(
         'A versão na nuvem é diferente da sua.',
         {
           modal: true,
@@ -549,7 +717,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       this.toast(`Novidades trazidas (${s.behind}) ✔`);
       return;
     }
-    const choice = await vscode.window.showWarningMessage(
+    const choice = await ui.warn(
       'Você e a nuvem têm commits diferentes.',
       {
         modal: true,
@@ -579,7 +747,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       this.toast('Pronto! Sua branch foi atualizada ✔');
     } catch (e) {
       if ((await currentOperation(root)) !== 'none') {
-        void vscode.window.showWarningMessage(
+        void ui.warn(
           'Quick Git: encontrei conflitos. Resolva os arquivos listados no painel e clique em "Continuar".'
         );
         return;
@@ -604,7 +772,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     if (!root) {
       return;
     }
-    const name = await vscode.window.showInputBox({
+    const name = await ui.input({
       title: 'Nova branch',
       prompt: 'Dê um nome para a nova branch (uma "linha de trabalho" separada)',
       placeHolder: 'feat/minha-feature',
@@ -669,7 +837,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       return;
     }
     const isNew = entry.kind === 'untracked' || entry.index === 'A';
-    const pick = await vscode.window.showWarningMessage(
+    const pick = await ui.warn(
       `Descartar as alterações de "${entry.path}"?`,
       {
         modal: true,
@@ -738,11 +906,15 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     const type = String(p.type ?? '');
     const message = String(p.message ?? '').replace(/\s+/g, ' ').trim();
     const details = String(p.details ?? '').trim();
-    if (!COMMIT_TYPES.includes(type)) {
+    const conf = getConfig();
+    if (!conf.types.some((t) => t.id === type)) {
       throw new Error('Tipo de commit inválido.');
     }
     if (!message) {
       throw new Error('Escreva uma mensagem para o commit.');
+    }
+    if (conf.maxLen > 0 && message.length > conf.maxLen) {
+      throw new Error(`A mensagem passa de ${conf.maxLen} caracteres (${message.length}).`);
     }
     if ((await currentOperation(root)) !== 'none') {
       throw new Error('Termine a atualização em andamento (botão "Continuar") antes de fazer um novo commit.');
@@ -781,7 +953,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
           'Se aparecer conflito, você resolve pelo painel e pode cancelar a qualquer momento.'
         : `As novidades de "${base}" serão misturadas na sua branch, e pode ser criado um commit de junção.\n\n` +
           'É a opção mais segura quando a branch já foi enviada ou outras pessoas a usam. Se aparecer conflito, você resolve pelo painel.';
-    const pick = await vscode.window.showWarningMessage(
+    const pick = await ui.warn(
       mode === 'rebase' ? `Atualizar com Rebase a partir de "${base}"?` : `Atualizar com Merge a partir de "${base}"?`,
       { modal: true, detail },
       'Continuar'
@@ -822,7 +994,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       this.toast('Pronto! Sua branch foi atualizada ✔');
     } catch (e) {
       if ((await currentOperation(root)) !== 'none' && (await readStatus(root)).some((f) => f.conflict)) {
-        void vscode.window.showWarningMessage('Quick Git: há mais conflitos para resolver no próximo passo.');
+        void ui.warn('Quick Git: há mais conflitos para resolver no próximo passo.');
         return;
       }
       throw e;
@@ -834,7 +1006,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     if (op === 'none') {
       return;
     }
-    const pick = await vscode.window.showWarningMessage(
+    const pick = await ui.warn(
       'Cancelar a atualização?',
       {
         modal: true,
@@ -854,12 +1026,12 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     if (!state.canUndoCommit) {
       throw new Error('Só é possível desfazer commits que ainda não foram enviados para a nuvem.');
     }
-    const last = state.history[0];
-    const pick = await vscode.window.showWarningMessage(
+    const lastSubject = await git(root, ['log', '-1', '--format=%s']).catch(() => '');
+    const pick = await ui.warn(
       'Desfazer o último commit?',
       {
         modal: true,
-        detail: `"${last?.subject ?? ''}" deixa de ser um commit, mas as alterações continuam nos seus arquivos, prontas para um novo commit.`,
+        detail: `"${lastSubject}" deixa de ser um commit, mas as alterações continuam nos seus arquivos, prontas para um novo commit.`,
       },
       'Desfazer commit'
     );
@@ -868,5 +1040,188 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     }
     await git(root, ['reset', '--soft', 'HEAD~1']);
     this.toast('Commit desfeito. Suas alterações continuam aqui ✔');
+  }
+
+  /** Reabre o guia inicial no painel (comando e botão do topo). */
+  openGuide(): void {
+    this.post({ type: 'openGuide' });
+  }
+
+  // ---------- Detalhes de um commit ----------
+
+  private async sendCommitDetails(root: string, hash: string): Promise<void> {
+    if (!isHash(hash)) {
+      return;
+    }
+    const details = await readCommitDetails(root, hash);
+    this.post({ type: 'commitDetails', details });
+  }
+
+  private async openCommitDiff(root: string, hash: string, file: string): Promise<void> {
+    if (!isHash(hash)) {
+      return;
+    }
+    const details = await readCommitDetails(root, hash);
+    const entry = details.files.find((f) => f.path === file);
+    if (!entry) {
+      return;
+    }
+    const parent = await git(root, ['rev-parse', '--verify', '-q', `${hash}^1`]).catch(() => '');
+    const mk = (rev: string | undefined, name: string): vscode.Uri =>
+      vscode.Uri.from({
+        scheme: DIFF_SCHEME,
+        path: '/' + name,
+        query: JSON.stringify({ root, ref: rev ? 'rev' : 'none', rev, file: name }),
+      });
+    const leftName = entry.oldPath ?? entry.path;
+    const left = entry.status === 'A' || !parent ? mk(undefined, leftName) : mk(parent, leftName);
+    const right = entry.status === 'D' ? mk(undefined, entry.path) : mk(hash, entry.path);
+    const short = hash.slice(0, 7);
+    await vscode.commands.executeCommand('vscode.diff', left, right, `${path.basename(file)} (antes ↔ ${short})`);
+  }
+
+  // ---------- Guia inicial (onboarding) ----------
+
+  private async onboardingInfo(root: string | undefined, hasFolder: boolean): Promise<Payload> {
+    const cwd = root ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir();
+    const gitVersion = await git(cwd, ['--version'])
+      .then((v) => v.replace(/^git version\s*/, ''))
+      .catch(() => null);
+    const cfg = async (key: string): Promise<string> => (gitVersion ? git(cwd, ['config', key]).catch(() => '') : '');
+    const [userName, userEmail] = await Promise.all([cfg('user.name'), cfg('user.email')]);
+
+    let login: string | undefined;
+    try {
+      const session = await vscode.authentication.getSession('github', ['repo'], { silent: true });
+      login = session?.account.label;
+    } catch {
+      login = undefined;
+    }
+
+    let hasRemote = false;
+    if (root) {
+      hasRemote = (await git(root, ['remote']).catch(() => '')).trim() !== '';
+    }
+    return {
+      done: this.globalState.get<boolean>(ONBOARDING_KEY, false),
+      gitVersion,
+      userName,
+      userEmail,
+      hasFolder,
+      isRepo: !!root,
+      hasRemote,
+      github: { signedIn: !!login, login },
+    };
+  }
+
+  private async setIdentity(): Promise<void> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir();
+    try {
+      const currentName = await git(cwd, ['config', 'user.name']).catch(() => '');
+      const currentEmail = await git(cwd, ['config', 'user.email']).catch(() => '');
+      const name = await ui.input({
+        title: 'Seu nome (1/2)',
+        prompt: 'Este nome aparece nos commits que você faz',
+        value: currentName,
+        placeHolder: 'Maria Silva',
+        ignoreFocusOut: true,
+        validateInput: (v) => (v.trim() ? undefined : 'Informe seu nome.'),
+      });
+      if (!name) {
+        return;
+      }
+      const email = await ui.input({
+        title: 'Seu e-mail (2/2)',
+        prompt: 'Use o mesmo e-mail da sua conta do GitHub para os commits aparecerem no seu perfil',
+        value: currentEmail,
+        placeHolder: 'voce@email.com',
+        ignoreFocusOut: true,
+        validateInput: (v) => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) ? undefined : 'Informe um e-mail válido.'),
+      });
+      if (!email) {
+        return;
+      }
+      await git(cwd, ['config', '--global', 'user.name', name.trim()]);
+      await git(cwd, ['config', '--global', 'user.email', email.trim()]);
+      this.toast('Nome e e-mail salvos ✔');
+    } catch (e) {
+      this.showError(e);
+    }
+    await this.refresh(true);
+  }
+
+  private async githubSignIn(): Promise<void> {
+    try {
+      const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+      this.toast(`Conectado ao GitHub como ${session.account.label} ✔`);
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      if (!/cancel/i.test(raw)) {
+        this.showError(e);
+      }
+    }
+    await this.refresh(true);
+  }
+
+  private async createGithubRepo(root: string): Promise<void> {
+    const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+    const name = await ui.input({
+      title: 'Nome do repositório no GitHub',
+      prompt: 'Letras, números, hífen, ponto e sublinhado',
+      value: path.basename(root).replace(/[^A-Za-z0-9._-]+/g, '-'),
+      ignoreFocusOut: true,
+      validateInput: (v) => (/^[A-Za-z0-9._-]{1,100}$/.test(v.trim()) ? undefined : 'Use apenas letras, números, hífen, ponto e sublinhado.'),
+    });
+    if (!name) {
+      return;
+    }
+    const visibility = await ui.pick(
+      [
+        { label: '$(lock) Privado', description: 'Só você (e quem você convidar) vê', value: true },
+        { label: '$(globe) Público', description: 'Qualquer pessoa pode ver', value: false },
+      ],
+      { title: 'Quem pode ver este repositório?', ignoreFocusOut: true }
+    );
+    if (!visibility) {
+      return;
+    }
+
+    const response = await fetch('https://api.github.com/user/repos', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+        'User-Agent': 'quick-git-commit-vscode',
+      },
+      body: JSON.stringify({ name: name.trim(), private: visibility.value }),
+    });
+    if (response.status === 422) {
+      throw new Error('Você já tem um repositório com esse nome no GitHub. Escolha outro nome.');
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('O GitHub não autorizou a criação. Entre novamente na sua conta e tente de novo.');
+    }
+    if (!response.ok) {
+      throw new Error(`O GitHub respondeu com erro ${response.status}. Tente novamente em instantes.`);
+    }
+    const created = (await response.json()) as { clone_url: string; html_url: string };
+
+    const remotes = (await git(root, ['remote'])).split('\n').filter(Boolean);
+    if (remotes.includes('origin')) {
+      await git(root, ['remote', 'set-url', 'origin', created.clone_url]);
+    } else {
+      await git(root, ['remote', 'add', 'origin', created.clone_url]);
+    }
+
+    const branch = await git(root, ['branch', '--show-current']);
+    const hasCommits = await gitOk(root, ['rev-parse', '--verify', '-q', 'HEAD']);
+    if (hasCommits && branch) {
+      await git(root, ['push', '-u', 'origin', branch]);
+      this.toast(`Repositório criado e enviado: ${created.html_url} ✔`);
+    } else {
+      this.toast('Repositório criado e conectado ✔ Faça o primeiro commit e clique em "Enviar".');
+    }
   }
 }

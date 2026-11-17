@@ -3,11 +3,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/GabrielMarcianoarante/quick-git-commit/releases"><img src="https://img.shields.io/badge/vers%C3%A3o-0.1.0-2563eb?style=flat-square" alt="Versão"></a>
+  <a href="https://github.com/GabrielMarcianoarante/quick-git-commit/releases"><img src="https://img.shields.io/badge/vers%C3%A3o-0.2.0-2563eb?style=flat-square" alt="Versão"></a>
   <img src="https://img.shields.io/badge/VS%20Code-%5E1.85-0891b2?style=flat-square&logo=visualstudiocode&logoColor=white" alt="VS Code">
   <img src="https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/licen%C3%A7a-PolyForm%20Noncommercial%201.0.0-16a34a?style=flat-square" alt="Licença PolyForm Noncommercial 1.0.0"></a>
-  <img src="https://img.shields.io/badge/PRs-pausados-7c3aed?style=flat-square" alt="Pull requests pausados">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licen%C3%A7a-PolyForm%20Noncommercial-16a34a?style=flat-square" alt="Licença PolyForm Noncommercial"></a>
+  <img src="https://img.shields.io/badge/PRs-bem--vindos-7c3aed?style=flat-square" alt="PRs bem-vindos">
 </p>
 
 <p align="center">
@@ -44,6 +44,24 @@ Tudo em um só lugar, com as cores do seu tema do VS Code.
 
 <p align="center"><sub>Capturas ilustrativas, geradas com dados de exemplo.</sub></p>
 
+### Gráfico de branches e detalhes do commit
+
+Cada linha colorida é uma branch. Os losangos marcam commits de junção (merge), e o anel destaca onde você está agora. Ao clicar em um commit, aparecem a mensagem, as estatísticas e os arquivos alterados.
+
+### Modo Simples e Avançado
+
+No modo **Simples**, os botões usam nomes fáceis e mostram o comando real na dica. No modo **Avançado**, o comando Git real fica em destaque, e os arquivos aparecem como no `git status` (`M`, `A`, `??`).
+
+<p align="center">
+  <img src="docs/images/panel-advanced.png" alt="Painel no modo Avançado, com os comandos Git reais nos botões" width="320">
+  &nbsp;&nbsp;
+  <img src="docs/images/panel-onboarding.png" alt="Guia inicial com os passos de configuração" width="320">
+</p>
+
+### Guia inicial
+
+Ao abrir o painel pela primeira vez, o guia leva você por cinco passos: Git instalado, nome e e-mail, repositório na pasta, conta do GitHub (opcional) e repositório online (opcional). Dá para pular e voltar depois pelo ícone de ajuda ou pelo comando **Quick Git: Abrir guia inicial**.
+
 | Recurso | Descrição |
 | --- | --- |
 | **Sincronizar com a nuvem** | `Buscar` confere se há novidades, `Trazer` baixa as novidades e `Enviar` manda os seus commits. Contadores mostram quantos commits faltam em cada direção. |
@@ -51,7 +69,10 @@ Tudo em um só lugar, com as cores do seu tema do VS Code.
 | **Minhas alterações** | Lista de arquivos com caixas de seleção (marcado entra no commit), visualização do que mudou (diff) e opção de descartar. |
 | **Commit padronizado** | Escolha o tipo, descreva a mudança e salve com `Salvar commit` ou `Salvar e enviar`. A mensagem é gravada no padrão Conventional Commits. |
 | **Atualizar minha branch** | Traga as novidades da `main` (ou de qualquer branch) com **Rebase** ou **Merge**, cada um explicado em linguagem simples. |
-| **Histórico** | Linha do tempo com etiquetas de branches e tags, marcação de commits "não enviados" e as novidades da nuvem que ainda não chegaram. |
+| **Histórico com gráfico** | Linhas coloridas mostram branches, ramificações e junções (merge). Etiquetas de branches e tags, marcação de commits "não enviados" e "só na nuvem". |
+| **Detalhes do commit** | Clique em um commit para ver a mensagem completa, quantos arquivos mudaram, as linhas adicionadas e removidas e a lista de arquivos. Clique em um arquivo para abrir a diferença. |
+| **Modo Simples e Avançado** | Alterne no topo do painel entre nomes amigáveis e os comandos Git reais (`git fetch`, `git pull`, `git rebase`...). Boa forma de aprender Git usando. |
+| **Guia inicial** | Na primeira execução, um passo a passo verifica o Git, configura nome e e-mail, cria o repositório, entra no GitHub e cria ou conecta o repositório online. |
 | **Desfazer último commit** | Desfaz o commit mais recente (ainda não enviado) mantendo as suas alterações nos arquivos. |
 | **Branches** | Trocar de branch e criar uma nova direto no topo do painel. |
 
@@ -90,6 +111,7 @@ O botão **Quick Commit** na barra inferior abre um fluxo guiado por menus, idea
 - O painel **nunca fica esperando senha no terminal**. Se faltar login, ele avisa o que fazer.
 - Erros do Git são traduzidos para mensagens claras. Os detalhes técnicos ficam em **Ver > Saída > Quick Git Commit**.
 - Os comandos `git` rodam localmente, via `execFile` com lista de argumentos (sem shell). A extensão não envia dados para nenhum serviço próprio.
+- O login do GitHub usa o sistema de contas do próprio VS Code. O token fica com o VS Code, é entregue ao Git apenas em memória e somente para endereços `github.com`, e nunca é gravado em arquivos nem em logs.
 
 ## Requisitos
 
@@ -133,12 +155,34 @@ Também é possível usar a Command Palette (`Ctrl+Shift+P`):
 | `Quick Git: Fazer commit rápido` | Abre o fluxo guiado de commit. |
 | `Quick Git: Abrir painel` | Abre o painel Git na barra lateral. |
 | `Quick Git: Atualizar painel` | Recarrega o estado do repositório. |
+| `Quick Git: Abrir guia inicial` | Abre o passo a passo de configuração. |
+
+## Atalhos e configurações
+
+| Atalho (Mac: `Cmd`) | Ação |
+| --- | --- |
+| `Ctrl+Alt+G` `G` | Abrir o painel |
+| `Ctrl+Alt+G` `C` | Commit rápido |
+| `Ctrl+Alt+G` `F` / `L` / `P` | Buscar (fetch) / Trazer (pull) / Enviar (push) |
+| `Ctrl+Alt+G` `S` | Marcar o arquivo aberto para o commit |
+
+Clique com o botão direito em um arquivo (Explorer ou editor) para **Marcar arquivo para o commit**. No campo de mensagem do painel, `Enter` usa a ação padrão, `Ctrl+Enter` faz commit e envia, e `Shift+Enter` faz só o commit.
+
+| Configuração | Padrão | O que faz |
+| --- | --- | --- |
+| `quickGitCommit.language` | `auto` | `auto`, `pt-BR` ou `en` |
+| `quickGitCommit.commitTypes` | `feat`, `fix`, `docs`, `style`, `refactor`, `chore` | Prefixos (texto ou `{ "label", "description" }`) |
+| `quickGitCommit.messageMaxLength` | `72` | Limite da mensagem, sem o prefixo (`0` = sem limite) |
+| `quickGitCommit.askBranch` | `true` | Perguntar pela branch no commit rápido |
+| `quickGitCommit.defaultAction` | `ask` | `ask`, `commit` ou `commitAndPush` |
+
+Tudo isso também pode ser ajustado dentro do painel, na engrenagem no topo (idioma, prefixos, limite e ação padrão), sem abrir o `settings.json`.
 
 ## Roadmap
 
 O objetivo é tornar o Quick Git Commit a forma mais fácil de usar Git dentro do VS Code. As prioridades abaixo podem mudar conforme o feedback da comunidade. Reaja com um polegar para cima nas issues das funções que você mais quer ver.
 
-**Disponível na v0.1.0**
+**Disponível na v0.2.0**
 
 - [x] Commit rápido pela barra de status (Conventional Commits)
 - [x] Painel lateral visual
@@ -150,17 +194,21 @@ O objetivo é tornar o Quick Git Commit a forma mais fácil de usar Git dentro d
 - [x] Histórico com novidades da nuvem e commits não enviados
 - [x] Desfazer último commit mantendo as alterações
 - [x] Trocar e criar branches
+- [x] Guia inicial: Git, nome e e-mail, repositório, login no GitHub e criação do repositório online
+- [x] Modo Simples e Avançado
+- [x] Detalhes do commit: arquivos alterados e diferenças
+- [x] Gráfico de branches com ramificações e junções
 
-**Próximo: experiência de uso**
+**Disponível na v0.3.0: experiência de uso**
 
-- [ ] Onboarding guiado na primeira execução (nome e e-mail, criar repositório, conectar ao GitHub)
-- [ ] Modo Simples e Avançado, alternando entre nomes amigáveis e comandos Git reais
-- [ ] Detalhes do commit: arquivos alterados e diferenças ao clicar em um commit
-- [ ] Gráfico de branches com linhas de ramificação e junção
-- [ ] Atalhos de teclado e ações no menu de contexto
-- [ ] Acessibilidade aprimorada (alto contraste e leitores de tela)
-- [ ] Internacionalização: inglês, espanhol e outros idiomas
-- [ ] Configurações da extensão: prefixos personalizados, limite de caracteres e comportamento padrão
+- [x] Atalhos de teclado e ações no menu de contexto
+- [x] Acessibilidade aprimorada (alto contraste e leitores de tela)
+- [x] Internacionalização: inglês
+- [x] Configurações da extensão: prefixos personalizados, limite de caracteres e comportamento padrão
+
+**Próximo: mais idiomas**
+
+- [ ] Espanhol e outros idiomas
 
 **Em seguida: funções essenciais**
 
@@ -194,6 +242,7 @@ quick-git-commit/
 │   ├── panel.ts         Painel lateral (webview) e ações
 │   └── quickCommit.ts   Fluxo rápido de commit por menus
 ├── media/
+│   ├── graph.js         Cálculo do gráfico de branches (função pura)
 │   ├── main.js          Interface do painel
 │   └── main.css         Estilos, baseados nas cores do tema do VS Code
 ├── resources/           Ícones da extensão
@@ -205,8 +254,18 @@ A interface é uma webview com política de segurança de conteúdo (CSP) restri
 
 ## Contribuindo
 
-Pull requests de código estão pausados por enquanto. Eles poderão ser aceitos quando houver um acordo de contribuição (CLA) para definir os termos das contribuições. Issues e sugestões continuam abertas; consulte [CONTRIBUTING.md](CONTRIBUTING.md).
+O projeto ainda **não aceita Pull Requests**. Estamos preparando o acordo de contribuição (CLA), e as contribuições de código abrirão assim que ele estiver pronto.
+
+Enquanto isso, a sua ajuda é muito bem-vinda de outras formas:
+
+- [Abra uma issue](https://github.com/GabrielMarcianoarante/quick-git-commit/issues/new) para relatar um problema ou sugerir uma função.
+- Reaja com um polegar para cima nas issues que você mais quer ver.
+- Compartilhe o projeto com quem sofre com Git.
+
+Leia o [CONTRIBUTING.md](CONTRIBUTING.md) para mais detalhes.
 
 ## Licença
 
-Distribuído sob a licença PolyForm Noncommercial 1.0.0. Consulte o arquivo [LICENSE](LICENSE) para os termos completos. Uma versão Pro poderá ser oferecida no futuro sob termos próprios.
+O Quick Git Commit é **gratuito para uso não comercial**, sob a licença [PolyForm Noncommercial 1.0.0](LICENSE). Você pode usar e modificar o código para uso pessoal, estudo, pesquisa e organizações sem fins lucrativos. Uso comercial, revenda e redistribuição com fins lucrativos não são permitidos sem autorização.
+
+Pretendemos lançar no futuro uma versão **Pro**, com funções adicionais. Para licenciamento comercial, abra uma issue ou entre em contato com o autor.

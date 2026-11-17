@@ -1,0 +1,21 @@
+{
+  "ext.description": "Git visual e simples dentro do VS Code: commits padronizados, sincronizar, rebase/merge e histórico, sem digitar comandos.",
+  "view.panel": "Painel Git",
+  "cmd.run": "Quick Git: Fazer commit rápido",
+  "cmd.openPanel": "Quick Git: Abrir painel",
+  "cmd.refresh": "Quick Git: Atualizar painel",
+  "cmd.guide": "Quick Git: Abrir guia inicial",
+  "cmd.fetch": "Quick Git: Buscar novidades (fetch)",
+  "cmd.pull": "Quick Git: Trazer novidades (pull)",
+  "cmd.push": "Quick Git: Enviar commits (push)",
+  "cmd.stageFile": "Quick Git: Marcar arquivo para o commit",
+  "cfg.title": "Quick Git Commit",
+  "cfg.language": "Idioma da interface. \"auto\" segue o idioma do VS Code (português ou inglês).",
+  "cfg.commitTypes": "Prefixos de commit. Cada item é um texto (\"feat\") ou um objeto { \"label\": \"perf\", \"description\": \"Desempenho\" }.",
+  "cfg.messageMaxLength": "Máximo de caracteres da mensagem do commit (sem o prefixo). Use 0 para não limitar.",
+  "cfg.askBranch": "No commit rápido, perguntar se quer manter, trocar ou criar uma branch.",
+  "cfg.defaultAction": "O que fazer depois de escrever a mensagem. \"ask\" mostra as opções.",
+  "cfg.defaultAction.ask": "Perguntar sempre",
+  "cfg.defaultAction.commit": "Somente commit (local)",
+  "cfg.defaultAction.commitAndPush": "Commit e enviar"
+}

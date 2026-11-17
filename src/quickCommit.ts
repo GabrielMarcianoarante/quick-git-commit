@@ -1,25 +1,35 @@
 import * as vscode from 'vscode';
 import { git, gitOk, getRepoRoot } from './git';
+import { getConfig } from './config';
+import { tr, ui } from './i18n';
 
-const COMMIT_TYPES: { label: string; description: string }[] = [
-  { label: 'feat', description: 'Nova funcionalidade' },
-  { label: 'fix', description: 'Correção de bug' },
-  { label: 'docs', description: 'Mudanças na documentação' },
-  { label: 'style', description: 'Formatação, sem alterar lógica' },
-  { label: 'refactor', description: 'Refatoração de código' },
-  { label: 'chore', description: 'Tarefas de manutenção e build' },
-];
+const KNOWN: Record<string, string> = {
+  feat: 'Nova funcionalidade',
+  fix: 'Correção de bug',
+  docs: 'Mudanças na documentação',
+  style: 'Formatação, sem alterar lógica',
+  refactor: 'Refatoração de código',
+  chore: 'Tarefas de manutenção e build',
+};
+
+/** Título dos passos com contagem dinâmica (alguns passos podem ser pulados pelas configurações). */
+function stepTitle(n: number, name: string): string {
+  const c = getConfig();
+  const skipped = (c.askBranch ? 0 : 1) + (c.defaultAction === 'ask' ? 0 : 1);
+  const offset = c.askBranch ? 0 : 1;
+  return `Quick Commit (${n - offset}/${4 - skipped}): ${tr(name)}`;
+}
 
 async function pickWorkspaceFolder(): Promise<string | undefined> {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
-    vscode.window.showErrorMessage('Quick Git Commit: abra uma pasta no VS Code primeiro.');
+    ui.error('Quick Git Commit: abra uma pasta no VS Code primeiro.');
     return undefined;
   }
   if (folders.length === 1) {
     return folders[0].uri.fsPath;
   }
-  const picked = await vscode.window.showQuickPick(
+  const picked = await ui.pick(
     folders.map((f) => ({ label: f.name, description: f.uri.fsPath })),
     { placeHolder: 'Escolha o repositório' }
   );
@@ -30,13 +40,13 @@ async function pickWorkspaceFolder(): Promise<string | undefined> {
 async function chooseBranch(cwd: string): Promise<boolean> {
   const current = (await git(cwd, ['branch', '--show-current'])) || '(HEAD destacado)';
 
-  const action = await vscode.window.showQuickPick(
+  const action = await ui.pick(
     [
       { label: '$(git-branch) Manter branch atual', description: current, id: 'keep' },
       { label: '$(arrow-swap) Trocar para outra branch local', id: 'switch' },
       { label: '$(add) Criar nova branch', id: 'create' },
     ],
-    { placeHolder: `Branch atual: ${current}`, title: 'Quick Commit (1/4): Branch' }
+    { placeHolder: `Branch atual: ${current}`, title: stepTitle(1, 'Branch') }
   );
   if (!action) {
     return false;
@@ -49,12 +59,12 @@ async function chooseBranch(cwd: string): Promise<boolean> {
       .map((b) => b.trim())
       .filter((b) => b && b !== current);
     if (branches.length === 0) {
-      vscode.window.showInformationMessage('Não há outras branches locais.');
+      ui.info('Não há outras branches locais.');
       return false;
     }
-    const target = await vscode.window.showQuickPick(branches, {
+    const target = await ui.pick(branches, {
       placeHolder: 'Escolha a branch de destino',
-      title: 'Quick Commit (1/4): Trocar de branch',
+      title: stepTitle(1, 'Trocar de branch'),
     });
     if (!target) {
       return false;
@@ -63,10 +73,10 @@ async function chooseBranch(cwd: string): Promise<boolean> {
   }
 
   if (action.id === 'create') {
-    const name = await vscode.window.showInputBox({
+    const name = await ui.input({
       prompt: 'Nome da nova branch',
       placeHolder: 'feat/minha-feature',
-      title: 'Quick Commit (1/4): Nova branch',
+      title: stepTitle(1, 'Nova branch'),
       validateInput: async (value) => {
         const v = value.trim();
         if (!v) {
@@ -86,29 +96,43 @@ async function chooseBranch(cwd: string): Promise<boolean> {
 }
 
 async function chooseType(): Promise<string | undefined> {
-  const picked = await vscode.window.showQuickPick(COMMIT_TYPES, {
-    placeHolder: 'Selecione o tipo do commit',
-    title: 'Quick Commit (2/4): Prefixo',
-  });
+  const picked = await ui.pick(
+    getConfig().types.map((t) => ({ label: t.id, description: t.description ?? KNOWN[t.id] ?? '' })),
+    {
+      placeHolder: 'Selecione o tipo do commit',
+      title: stepTitle(2, 'Prefixo'),
+    }
+  );
   return picked?.label;
 }
 
 async function askMessage(type: string): Promise<string | undefined> {
-  return vscode.window.showInputBox({
+  return ui.input({
     prompt: `Mensagem do commit (será gravado como "${type}: ...")`,
     placeHolder: 'descreva a mudança',
-    title: 'Quick Commit (3/4): Mensagem',
-    validateInput: (value) => (value.trim() ? undefined : 'A mensagem não pode ser vazia.'),
+    title: stepTitle(3, 'Mensagem'),
+    validateInput: (value) => {
+      const v = value.trim();
+      const max = getConfig().maxLen;
+      if (!v) {
+        return 'A mensagem não pode ser vazia.';
+      }
+      return max > 0 && v.length > max ? `A mensagem passa de ${max} caracteres (${v.length}).` : undefined;
+    },
   });
 }
 
 async function chooseFinalAction(): Promise<'commit' | 'push' | undefined> {
-  const picked = await vscode.window.showQuickPick(
+  const preset = getConfig().defaultAction;
+  if (preset !== 'ask') {
+    return preset === 'commit' ? 'commit' : 'push';
+  }
+  const picked = await ui.pick(
     [
       { label: '$(check) Commit', description: 'Apenas salvar localmente', id: 'commit' as const },
       { label: '$(cloud-upload) Commit & Push', description: 'Salvar e enviar ao remoto', id: 'push' as const },
     ],
-    { placeHolder: 'O que deseja fazer?', title: 'Quick Commit (4/4): Ação' }
+    { placeHolder: 'O que deseja fazer?', title: stepTitle(4, 'Ação') }
   );
   return picked?.id;
 }
@@ -133,17 +157,17 @@ export async function runQuickCommit(onDone?: () => void): Promise<void> {
   try {
     const cwd = await getRepoRoot(folder);
     if (!cwd) {
-      vscode.window.showErrorMessage('Quick Git Commit: esta pasta não é um repositório Git.');
+      ui.error('Quick Git Commit: esta pasta não é um repositório Git.');
       return;
     }
 
     const status = await git(cwd, ['status', '--porcelain']);
     if (!status) {
-      vscode.window.showInformationMessage('Quick Git Commit: não há alterações para commitar.');
+      ui.info('Quick Git Commit: não há alterações para commitar.');
       return;
     }
 
-    if (!(await chooseBranch(cwd))) {
+    if (getConfig().askBranch && !(await chooseBranch(cwd))) {
       return;
     }
 
@@ -182,14 +206,14 @@ export async function runQuickCommit(onDone?: () => void): Promise<void> {
       }
     );
 
-    vscode.window.showInformationMessage(
+    ui.info(
       action === 'push'
         ? `Commit realizado e enviado: ${type}: ${message.trim()}`
         : `Commit realizado: ${type}: ${message.trim()}`
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    vscode.window.showErrorMessage(`Quick Git Commit: ${msg}`);
+    ui.error(`Quick Git Commit: ${msg}`);
   } finally {
     onDone?.();
   }

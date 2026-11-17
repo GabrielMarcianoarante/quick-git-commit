@@ -1,0 +1,6 @@
+{
+  "command.quickCommit": "Quick Git: Hacer commit rápido",
+  "command.openPanel": "Quick Git: Abrir panel",
+  "command.refresh": "Quick Git: Actualizar panel",
+  "command.guide": "Quick Git: Abrir guía inicial"
+}
