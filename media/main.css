@@ -1,0 +1,208 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0;
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  background: transparent;
+}
+
+.hidden { display: none !important; }
+
+#app { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 28px; }
+
+.icon {
+  width: 14px; height: 14px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ---------- Topo ---------- */
+.top { display: flex; flex-direction: column; gap: 8px; }
+.repoLine { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.repoName { font-weight: 700; font-size: 1.1em; letter-spacing: .2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.branchRow { display: flex; align-items: center; gap: 6px; }
+.branchIcon { display: inline-flex; color: var(--vscode-textLink-foreground); }
+.branchIcon .icon { width: 16px; height: 16px; }
+
+select, input[type="text"], textarea {
+  width: 100%;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, transparent));
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  outline: none;
+}
+select { cursor: pointer; }
+select:focus, input[type="text"]:focus, textarea:focus { border-color: var(--vscode-focusBorder); }
+textarea { resize: vertical; min-height: 44px; margin-top: 6px; }
+
+/* ---------- Botões ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 6px 10px; border-radius: 6px; border: 1px solid transparent;
+  font: inherit; cursor: pointer; white-space: nowrap;
+  transition: filter .12s ease, transform .05s ease;
+}
+.btn:hover:not(:disabled) { filter: brightness(1.12); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn:focus-visible, .iconBtn:focus-visible, .pill:focus-visible, .fileName:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+.btn.primary { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
+.btn.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+.btn.small { padding: 3px 8px; font-size: .92em; }
+.btn.grow { flex: 1 1 0; min-width: 0; }
+
+.iconBtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; flex: none; padding: 0;
+  color: var(--vscode-foreground); background: transparent;
+  border: 1px solid transparent; border-radius: 6px; cursor: pointer; opacity: .85;
+}
+.iconBtn:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); opacity: 1; }
+.iconBtn:disabled { opacity: .35; cursor: not-allowed; }
+.iconBtn.danger:hover:not(:disabled) { color: var(--vscode-errorForeground); }
+
+.row { display: flex; gap: 6px; margin-top: 8px; }
+
+/* ---------- Cartões e seções ---------- */
+.card {
+  background: var(--vscode-editorWidget-background, rgba(127,127,127,.08));
+  border: 1px solid var(--vscode-widget-border, rgba(127,127,127,.25));
+  border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px;
+}
+.card.warn { border-color: var(--vscode-editorWarning-foreground, #cca700); }
+.card p { margin: 0; line-height: 1.45; }
+.cardTitle { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.card.warn .cardTitle { color: var(--vscode-editorWarning-foreground, #cca700); }
+
+.section {
+  background: var(--vscode-editorWidget-background, rgba(127,127,127,.06));
+  border: 1px solid var(--vscode-widget-border, rgba(127,127,127,.22));
+  border-radius: 10px; overflow: hidden;
+}
+#main { display: flex; flex-direction: column; gap: 10px; }
+.section > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 12px; font-weight: 600;
+}
+.section > summary::-webkit-details-marker { display: none; }
+.section > summary:hover { background: var(--vscode-list-hoverBackground); }
+.sTitle { display: inline-flex; align-items: center; gap: 7px; }
+.section > summary::after {
+  content: ''; width: 7px; height: 7px; flex: none; margin-left: 4px;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg); opacity: .6; transition: transform .15s ease;
+}
+.section[open] > summary::after { transform: rotate(45deg); }
+.badges { display: inline-flex; gap: 4px; margin-left: auto; }
+.sBody { padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+
+.pill-count {
+  min-width: 20px; padding: 1px 7px; border-radius: 999px; text-align: center; font-size: .85em; font-weight: 700;
+  color: var(--vscode-badge-foreground); background: var(--vscode-badge-background);
+}
+.pill-count.up { background: var(--vscode-gitDecoration-addedResourceForeground, #3fb950); color: #fff; }
+.pill-count.down { background: var(--vscode-editorInfo-foreground, #3794ff); color: #fff; }
+
+.label { font-weight: 600; margin-top: 6px; }
+.hint { margin: 0; font-size: .9em; line-height: 1.4; color: var(--vscode-descriptionForeground); }
+.muted { font-size: .88em; color: var(--vscode-descriptionForeground); }
+.sBody > p { margin: 0; line-height: 1.45; }
+
+.status { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 8px; line-height: 1.4; }
+.status .icon { margin-top: 2px; }
+.status.ok { background: rgba(63,185,80,.14); color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950); }
+.status.info { background: rgba(55,148,255,.14); color: var(--vscode-editorInfo-foreground, #3794ff); }
+.status.warn { background: rgba(204,167,0,.16); color: var(--vscode-editorWarning-foreground, #cca700); }
+
+.empty { display: flex; align-items: center; gap: 8px; padding: 12px 4px; color: var(--vscode-descriptionForeground); }
+
+/* ---------- Arquivos ---------- */
+.fileHead { display: flex; align-items: center; gap: 8px; padding: 4px 0 6px; font-weight: 600; cursor: pointer; }
+.fileHead .muted { margin-left: auto; font-weight: 400; }
+.file { display: flex; align-items: center; gap: 6px; padding: 3px 2px; border-radius: 6px; }
+.file:hover { background: var(--vscode-list-hoverBackground); }
+input[type="checkbox"] { margin: 0; flex: none; width: 15px; height: 15px; cursor: pointer; accent-color: var(--vscode-button-background); }
+.fileName {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 6px;
+  background: none; border: none; color: inherit; font: inherit; text-align: left; padding: 2px 0; cursor: pointer;
+}
+.base { font-weight: 600; white-space: nowrap; }
+.dir { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .88em; color: var(--vscode-descriptionForeground); }
+.fileActions { display: none; gap: 0; flex: none; }
+.file:hover .fileActions, .file:focus-within .fileActions { display: inline-flex; }
+.kind { flex: none; font-size: .75em; font-weight: 700; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: .3px; background: rgba(127,127,127,.2); }
+.kind.modified, .kind.renamed, .kind.typechange { color: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d); background: rgba(226,192,141,.14); }
+.kind.added, .kind.untracked { color: var(--vscode-gitDecoration-untrackedResourceForeground, #73c991); background: rgba(115,201,145,.14); }
+.kind.deleted { color: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39); background: rgba(199,78,57,.16); }
+
+.conflicts { display: flex; flex-direction: column; gap: 4px; }
+.conflict { display: flex; align-items: center; gap: 6px; }
+.conflict .fileName { cursor: default; }
+
+/* ---------- Formulário de commit ---------- */
+.commitForm { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--vscode-widget-border, rgba(127,127,127,.3)); }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill {
+  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0;
+  padding: 4px 9px; border-radius: 8px; cursor: pointer; font: inherit; line-height: 1.2;
+  color: var(--vscode-foreground); background: transparent;
+  border: 1px solid var(--vscode-widget-border, rgba(127,127,127,.4));
+}
+.pill:hover { background: var(--vscode-list-hoverBackground); }
+.pill.active { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border-color: transparent; }
+.pillLabel { font-weight: 600; }
+.pillCode { font-size: .75em; opacity: .75; font-family: var(--vscode-editor-font-family, monospace); }
+.counter { text-align: right; font-size: .8em; color: var(--vscode-descriptionForeground); }
+.counter .over { color: var(--vscode-editorWarning-foreground, #cca700); font-weight: 700; }
+#commitHint { min-height: 1.4em; margin-top: 4px; }
+
+/* ---------- Atualizar branch ---------- */
+.option { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 8px; border: 1px solid var(--vscode-widget-border, rgba(127,127,127,.25)); }
+.optionTitle { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.tag { font-size: .72em; font-weight: 700; padding: 1px 6px; border-radius: 999px; text-transform: uppercase; letter-spacing: .3px; }
+.tag.good { color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950); background: rgba(63,185,80,.15); }
+.tag.warn { color: var(--vscode-editorWarning-foreground, #cca700); background: rgba(204,167,0,.16); }
+
+/* ---------- Histórico ---------- */
+.groupTitle { display: flex; align-items: center; gap: 6px; font-weight: 600; margin-top: 4px; color: var(--vscode-descriptionForeground); }
+.timeline { list-style: none; margin: 4px 0 0; padding: 0 0 0 10px; position: relative; }
+.timeline::before { content: ''; position: absolute; left: 14px; top: 8px; bottom: 8px; width: 2px; background: var(--vscode-widget-border, rgba(127,127,127,.35)); }
+.commit { position: relative; display: flex; gap: 10px; padding: 6px 4px 6px 0; }
+.dot {
+  position: relative; z-index: 1; flex: none; width: 10px; height: 10px; margin-top: 5px; margin-left: 5px; border-radius: 50%;
+  background: var(--vscode-textLink-foreground); box-shadow: 0 0 0 3px var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+.commit.merge .dot { background: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d); border-radius: 2px; transform: rotate(45deg); }
+.commit.incoming .dot { background: var(--vscode-editorInfo-foreground, #3794ff); }
+.cbody { min-width: 0; flex: 1; }
+.subject { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { font-size: .85em; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.refs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.ref {
+  font-size: .75em; padding: 1px 7px; border-radius: 999px; font-weight: 600;
+  background: rgba(127,127,127,.2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ref.head { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
+.ref.remote { color: var(--vscode-editorInfo-foreground, #3794ff); background: rgba(55,148,255,.14); }
+.ref.rtag { color: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d); background: rgba(226,192,141,.14); }
+
+/* ---------- Carregando ---------- */
+.busy {
+  position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  background: color-mix(in srgb, var(--vscode-sideBar-background, #1e1e1e) 78%, transparent);
+  backdrop-filter: blur(1px); text-align: center; padding: 20px;
+}
+.spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 3px solid rgba(127,127,127,.3); border-top-color: var(--vscode-progressBar-background, var(--vscode-button-background));
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } .btn, .section > summary::after { transition: none; } }

@@ -1,0 +1,88 @@
+{
+  "name": "quick-git-commit",
+  "displayName": "Quick Git Commit",
+  "description": "Git visual e simples dentro do VS Code: commits padronizados, sincronizar, rebase/merge e histórico, sem digitar comandos.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "quickGitCommit",
+          "title": "Quick Git",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "quickGitCommit": [
+        {
+          "type": "webview",
+          "id": "quickGitCommit.panel",
+          "name": "Painel Git"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "quickGitCommit.run",
+        "title": "Quick Git: Fazer commit rápido"
+      },
+      {
+        "command": "quickGitCommit.openPanel",
+        "title": "Quick Git: Abrir painel"
+      },
+      {
+        "command": "quickGitCommit.refresh",
+        "title": "Quick Git: Atualizar painel"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.3.0"
+  },
+  "icon": "resources/icon.png",
+  "keywords": [
+    "git",
+    "commit",
+    "conventional commits",
+    "rebase",
+    "merge",
+    "scm",
+    "status bar",
+    "sidebar"
+  ],
+  "galleryBanner": {
+    "color": "#0f1a30",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GabrielMarcianoarante/quick-git-commit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/GabrielMarcianoarante/quick-git-commit/issues"
+  },
+  "homepage": "https://github.com/GabrielMarcianoarante/quick-git-commit#readme"
+}
