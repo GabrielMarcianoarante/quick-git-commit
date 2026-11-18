@@ -1,6 +1,4 @@
-#!/usr/bin/env bash
-# Gera o texto da release a partir do CHANGELOG.md.
-# Uso: release-notes.sh <tag> <repo> [tag-anterior]
+
 set -euo pipefail
 
 TAG="$1"
@@ -9,7 +7,7 @@ PREV="${3:-}"
 VERSION="${TAG#v}"
 VSIX="quick-git-commit-${VERSION}.vsix"
 
-# Seção "## X.Y.Z" do CHANGELOG, sem o título.
+
 CHANGES="$(awk -v v="$VERSION" '
   $0 ~ "^## " v "([[:space:]]|$)" { found = 1; next }
   found && /^## / { exit }

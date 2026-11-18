@@ -1,9 +1,6 @@
 name: Release
 
-# Para lançar uma versão:
-#   1. aumente "version" no package.json e adicione a seção "## X.Y.Z" no CHANGELOG.md
-#   2. faça commit e envie
-#   3. git tag vX.Y.Z && git push origin vX.Y.Z
+
 on:
   push:
     tags:
@@ -16,13 +13,13 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm ci
@@ -44,7 +41,7 @@ jobs:
       - name: Montar o texto da release
         run: |
           PREV="$(git tag --sort=-v:refname | grep -v "^${GITHUB_REF_NAME}$" | head -n 1 || true)"
-          .github/scripts/release-notes.sh "${GITHUB_REF_NAME}" "${GITHUB_REPOSITORY}" "${PREV}" > release-notes.md
+          bash .github/scripts/release-notes.sh "${GITHUB_REF_NAME}" "${GITHUB_REPOSITORY}" "${PREV}" > release-notes.md
           cat release-notes.md
 
       - name: Criar a release no GitHub
