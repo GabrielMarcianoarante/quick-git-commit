@@ -1034,50 +1034,6 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       return;
     }
 
-<<<<<<< HEAD
-    if (choice === 'mine') {
-      await git(root, ['checkout', '--ours', '--', file]).catch(async () => {
-        await git(root, ['rm', '--', file]);
-        await git(root, ['add', '--', file]).catch(() => undefined);
-      });
-      await git(root, ['add', '--', file]);
-      this.toast(`Mantidas as suas mudanças em "${file}" ✔`);
-      return;
-    }
-    if (choice === 'theirs') {
-      await git(root, ['checkout', '--theirs', '--', file]).catch(async () => {
-        await git(root, ['rm', '--', file]);
-        await git(root, ['add', '--', file]).catch(() => undefined);
-      });
-      await git(root, ['add', '--', file]);
-      this.toast(`Mantidas as mudanças da outra versão em "${file}" ✔`);
-      return;
-    }
-
-    await vscode.window.showTextDocument(vscode.Uri.file(path.join(root, file)));
-  }
-
-  private async openConflictDiff(root: string, file: string): Promise<void> {
-    const state = await readState(root);
-    if (!state.conflicts.includes(file)) {
-      return;
-    }
-    const abs = path.join(root, file);
-    const mk = (ref: 'ours' | 'theirs'): vscode.Uri =>
-      vscode.Uri.from({ scheme: DIFF_SCHEME, path: '/' + file, query: JSON.stringify({ root, ref, file }) });
-
-    const ours = mk('ours');
-    const theirs = mk('theirs');
-    await vscode.commands.executeCommand(
-      'vscode.diff',
-      ours,
-      theirs,
-      `${path.basename(file)} — suas mudanças ↔ mudanças da outra versão`
-    );
-    if (!fs.existsSync(abs)) {
-      return;
-    }
-=======
     if (choice === 'manual') {
       await vscode.window.showTextDocument(vscode.Uri.file(path.join(root, file)));
       return;
@@ -1096,7 +1052,6 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     }
 
     await git(root, ['add', '--', file]);
->>>>>>> b05e4f2 (feat: Uptade)
   }
 
   private async openConflictDiff(root: string, file: string): Promise<void> {
@@ -1145,6 +1100,17 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
   private async doAbort(root: string): Promise<void> {
     const op = await currentOperation(root);
     if (op === 'none') {
+      return;
+    }
+    const pick = await ui.warn(
+      'Cancelar a atualização?',
+      {
+        modal: true,
+        detail: 'Sua branch volta exatamente ao que era antes de você começar. Nenhum trabalho é perdido.',
+      },
+      'Cancelar atualização'
+    );
+    if (pick !== 'Cancelar atualização') {
       return;
     }
     await git(root, op === 'rebase' ? ['rebase', '--abort'] : ['merge', '--abort']);
@@ -1253,10 +1219,28 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     try {
       const currentName = await git(cwd, ['config', 'user.name']).catch(() => '');
       const currentEmail = await git(cwd, ['config', 'user.email']).catch(() => '');
-      const name = await ui.input({ title: 'Seu nome', prompt: 'Este nome aparece nos commits', value: currentName, validateInput: (v) => v.trim() ? undefined : 'Informe seu nome.' });
-      if (!name) return;
-      const email = await ui.input({ title: 'Seu e-mail', prompt: 'Use o e-mail da sua conta do GitHub', value: currentEmail, validateInput: (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) ? undefined : 'Informe um e-mail válido.' });
-      if (!email) return;
+      const name = await ui.input({
+        title: 'Seu nome (1/2)',
+        prompt: 'Este nome aparece nos commits que você faz',
+        value: currentName,
+        placeHolder: 'Maria Silva',
+        ignoreFocusOut: true,
+        validateInput: (v) => (v.trim() ? undefined : 'Informe seu nome.'),
+      });
+      if (!name) {
+        return;
+      }
+      const email = await ui.input({
+        title: 'Seu e-mail (2/2)',
+        prompt: 'Use o mesmo e-mail da sua conta do GitHub para os commits aparecerem no seu perfil',
+        value: currentEmail,
+        placeHolder: 'voce@email.com',
+        ignoreFocusOut: true,
+        validateInput: (v) => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) ? undefined : 'Informe um e-mail válido.'),
+      });
+      if (!email) {
+        return;
+      }
       await git(cwd, ['config', '--global', 'user.name', name.trim()]);
       await git(cwd, ['config', '--global', 'user.email', email.trim()]);
       this.toast('Nome e e-mail salvos ✔');
@@ -1276,12 +1260,47 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
 
   private async createGithubRepo(root: string): Promise<void> {
     const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
-    const name = await ui.input({ title: 'Nome do repositório no GitHub', prompt: 'Letras, números, hífen, ponto e sublinhado', value: path.basename(root).replace(/[^A-Za-z0-9._-]+/g, '-') });
-    if (!name) return;
-    const visibility = await ui.pick([{ label: '$(lock) Privado', description: 'Só você e convidados', value: true }, { label: '$(globe) Público', description: 'Qualquer pessoa pode ver', value: false }], { title: 'Quem pode ver este repositório?' });
-    if (!visibility) return;
-    const response = await fetch('https://api.github.com/user/repos', { method: 'POST', headers: { Authorization: `Bearer ${session.accessToken}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'quick-git-commit-vscode' }, body: JSON.stringify({ name: name.trim(), private: visibility.value }) });
-    if (!response.ok) throw new Error(`O GitHub respondeu com erro ${response.status}.`);
+    const name = await ui.input({
+      title: 'Nome do repositório no GitHub',
+      prompt: 'Letras, números, hífen, ponto e sublinhado',
+      value: path.basename(root).replace(/[^A-Za-z0-9._-]+/g, '-'),
+      ignoreFocusOut: true,
+      validateInput: (v) => (/^[A-Za-z0-9._-]{1,100}$/.test(v.trim()) ? undefined : 'Use apenas letras, números, hífen, ponto e sublinhado.'),
+    });
+    if (!name) {
+      return;
+    }
+    const visibility = await ui.pick(
+      [
+        { label: '$(lock) Privado', description: 'Só você (e quem você convidar) vê', value: true },
+        { label: '$(globe) Público', description: 'Qualquer pessoa pode ver', value: false },
+      ],
+      { title: 'Quem pode ver este repositório?', ignoreFocusOut: true }
+    );
+    if (!visibility) {
+      return;
+    }
+
+    const response = await fetch('https://api.github.com/user/repos', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+        'User-Agent': 'quick-git-commit-vscode',
+      },
+      body: JSON.stringify({ name: name.trim(), private: visibility.value }),
+    });
+    if (response.status === 422) {
+      throw new Error('Você já tem um repositório com esse nome no GitHub. Escolha outro nome.');
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('O GitHub não autorizou a criação. Entre novamente na sua conta e tente de novo.');
+    }
+    if (!response.ok) {
+      throw new Error(`O GitHub respondeu com erro ${response.status}. Tente novamente em instantes.`);
+    }
     const created = (await response.json()) as { clone_url: string; html_url: string };
     const remotes = (await git(root, ['remote'])).split('\n').filter(Boolean);
     if (remotes.includes('origin')) await git(root, ['remote', 'set-url', 'origin', created.clone_url]);

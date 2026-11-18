@@ -470,11 +470,7 @@ export async function readStashes(root: string): Promise<StashInfo[]> {
 
 export async function readReflog(root: string): Promise<ReflogInfo[]> {
   try {
-<<<<<<< HEAD
-    const out = await git(root, ['reflog', 'show', '--all', '-n', '30', '--format=%H%x1f%h%x1f%gs%x1f%ar'], { raw: true });
-=======
     const out = await git(root, ['reflog', 'show', 'HEAD', '-n', '30', '--format=%H%x1f%h%x1f%gs%x1f%ar'], { raw: true });
->>>>>>> b05e4f2 (feat: Uptade)
     const seen = new Set<string>();
     return out
       .split('\n')

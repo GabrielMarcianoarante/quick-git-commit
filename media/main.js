@@ -885,45 +885,44 @@
         btn(mergeLabel, { icon: 'merge', mono: advanced(), disabled: off, onclick: () => post('update', { mode: 'merge', base: ui.base }) })
       )
     );
-    if (off) {
-      body.append(h('p', { class: 'hint', text: 'Escolha uma base para atualizar sua branch.' }));
+    if (all.length === 0) {
+      body.prepend(h('p', { class: 'hint', text: 'Ainda não há outra branch para trazer novidades.' }));
     }
   }
 
-  // ---------- Painel principal (dinâmico) ----------
-  function renderRepoInfo() {
-    const head = $('repoHead');
-    head.replaceChildren();
-    if (!state.isRepo) return;
+  // ---------- Histórico com gráfico ----------
+  const GW = 14; // largura de cada coluna do gráfico
+  const GPAD = 6;
 
-    const url = state.remoteUrl || '';
-    const rem = url.replace(/^.*@|^https?:\/\//, '').replace(/\/.*$/, '');
-    const name = state.repoName.replace(/\.git$/, '');
-    const title = h('h1', { class: 'repoTitle' }, h('span', { text: name }), h('span', { class: 'repoMeta', text: rem }));
-    const desc = h('p', { class: 'repoDesc' }, url );
-    head.append(title, desc);
+  function graphCell(row, lanes, c) {
+    const width = GPAD * 2 + lanes * GW;
+    const X = (i) => GPAD + Graph.clamp(i) * GW + GW / 2;
+    const svg = svgEl('svg', { class: 'gsvg', width, height: '100%', viewBox: '0 0 ' + width + ' 100', preserveAspectRatio: 'none', 'aria-hidden': 'true' });
+    const line = (x1, y1, x2, y2, color) => {
+      const my = (y1 + y2) / 2;
+      const d = x1 === x2 ? 'M' + x1 + ' ' + y1 + ' L' + x2 + ' ' + y2 : 'M' + x1 + ' ' + y1 + ' C' + x1 + ' ' + my + ' ' + x2 + ' ' + my + ' ' + x2 + ' ' + y2;
+      svg.append(svgEl('path', { d, stroke: color, class: 'gline', fill: 'none' }));
+    };
+    row.pass.forEach((i) => line(X(i), 0, X(i), 100, Graph.colorOf(i)));
+    row.top.forEach((i) => line(X(i), 0, X(row.col), 50, Graph.colorOf(i)));
+    row.bottom.forEach((i) => line(X(row.col), 50, X(i), 100, Graph.colorOf(i)));
+
+    const dot = h('span', { class: 'gdot' + (c.merge ? ' merge' : '') + (c.head ? ' head' : '') });
+    dot.style.left = X(row.col) - 5 + 'px';
+    dot.style.background = Graph.colorOf(row.col);
+    const cell = h('div', { class: 'gutter', style: 'width:' + width + 'px' }, svg, dot);
+    return cell;
   }
 
-  // ---------- Comunicação com o backend (extensão) ----------
-  window.receiveState = (s) => {
-    state = s;
-    render();
-  };
-  window.receiveDetails = (id, details) => {
-    detailsCache[id] = details;
-    if (id === ui.expanded) renderCommit();
-  };
-  window.receiveError = (error) => {
-    const msg = typeof error === 'string' ? error : error.message || String(error);
-    $('errorMsg').textContent = msg;
-    $('errorPanel').classList.remove('hidden');
-  };
-  window.clearError = () => $('errorPanel').classList.add('hidden');
+  function commitRow(c, row, lanes) {
+    const t = T();
+    const refs = h('div', { class: 'refs' });
+    for (const r of c.refs) {
+      refs.append(h('span', { class: 'ref ' + (r.kind === 'tag' ? 'rtag' : r.kind) + (r.head ? ' head' : ''), text: r.name }));
+    }
+    if (c.unpushed) refs.append(h('span', { class: 'tag warn', text: advanced() ? 'ahead' : 'não enviado' }));
+    if (c.incoming) refs.append(h('span', { class: 'tag info', text: advanced() ? 'behind' : 'só na nuvem' }));
 
-<<<<<<< HEAD
-  window.addEventListener('message', (e) => {
-    const m = e.data;
-=======
     const open = ui.expanded === c.hash;
     const head = h(
       'button',
@@ -1124,23 +1123,38 @@
   // ---------- Mensagens da extensão ----------
   window.addEventListener('message', (ev) => {
     const m = ev.data;
->>>>>>> b05e4f2 (feat: Uptade)
     if (m.type === 'state') {
       state = m.state;
       render();
-    } else if (m.type === 'details') {
-      detailsCache[m.id] = m.details;
-      if (m.id === ui.expanded) renderCommit();
-    } else if (m.type === 'error') {
-      $('errorMsg').textContent = m.message;
-      $('errorPanel').classList.remove('hidden');
-    } else if (m.type === 'clearError') {
-      $('errorPanel').classList.add('hidden');
+    } else if (m.type === 'config') {
+      CFG = { ...CFG, ...m.cfg };
+      MAXLEN = typeof CFG.maxLen === 'number' ? CFG.maxLen : 72;
+      applyDefaultAction();
+      if (state && state.isRepo) renderCommit();
+      if (ui.settings) renderSettings();
+    } else if (m.type === 'busy') {
+      $('busy').classList.toggle('hidden', !m.on);
+      $('busyText').textContent = m.label || '';
+      announce(m.on ? m.label : '');
+    } else if (m.type === 'committed') {
+      ui.message = '';
+      ui.details = '';
+      $('msgInput').value = '';
+      $('detailsInput').value = '';
+      announce('Commit salvo ✔');
+      save();
+    } else if (m.type === 'commitDetails') {
+      const keys = Object.keys(detailsCache);
+      if (keys.length > 80) delete detailsCache[keys[0]];
+      detailsCache[m.details.hash] = m.details;
+      if (state && state.isRepo) renderHistory();
+    } else if (m.type === 'openGuide') {
+      ui.guide = true;
+      render();
     }
   });
 
-  // ---------- Inicialização ----------
   initStatic();
-  save();
-  post('init');
+  applySettingsView();
+  vscode.postMessage({ type: 'ready' });
 })();
