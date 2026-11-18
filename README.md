@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/GabrielMarcianoarante/quick-git-commit/releases"><img src="https://img.shields.io/badge/vers%C3%A3o-0.3.3-2563eb?style=flat-square" alt="Versão"></a>
+  <a href="https://github.com/GabrielMarcianoarante/quick-git-commit/releases"><img src="https://img.shields.io/badge/vers%C3%A3o-0.4.0-2563eb?style=flat-square" alt="Versão"></a>
   <img src="https://img.shields.io/badge/VS%20Code-%5E1.85-0891b2?style=flat-square&logo=visualstudiocode&logoColor=white" alt="VS Code">
   <img src="https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
   <a href="LICENSE"><img src="https://img.shields.io/badge/licen%C3%A7a-PolyForm%20Noncommercial-16a34a?style=flat-square" alt="Licença PolyForm Noncommercial"></a>
@@ -110,7 +110,7 @@ O botão **Quick Commit** na barra inferior abre um fluxo guiado por menus, idea
 - O envio forçado usa `--force-with-lease`, que evita sobrescrever trabalho que você ainda não viu.
 - O painel **nunca fica esperando senha no terminal**. Se faltar login, ele avisa o que fazer.
 - Erros do Git são traduzidos para mensagens claras. Os detalhes técnicos ficam em **Ver > Saída > Quick Git Commit**.
-- Os comandos `git` rodam localmente, via `execFile` com lista de argumentos (sem shell). A extensão não envia dados para nenhum serviço próprio.
+- Os comandos `git` rodam localmente, via `execFile` com lista de argumentos (sem shell). A extensão não envia dados para nenhum serviço próprio. A única consulta de rede automática é a verificação de nova versão, uma requisição anônima à API pública de releases do GitHub (no máximo uma vez por dia), que não envia nenhuma informação sua e pode ser desativada.
 - O login do GitHub usa o sistema de contas do próprio VS Code. O token fica com o VS Code, é entregue ao Git apenas em memória e somente para endereços `github.com`, e nunca é gravado em arquivos nem em logs.
 
 ## Requisitos
@@ -132,13 +132,24 @@ npm run compile
 
 Abra a pasta no VS Code e pressione **F5** (configuração "Executar extensão"). Uma nova janela abrirá com a extensão carregada. Abra nela uma pasta que seja um repositório Git.
 
-### Instalando o arquivo .vsix
+### Pelo GitHub Releases (recomendado)
+
+1. Abra a página de [Releases](https://github.com/GabrielMarcianoarante/quick-git-commit/releases) e baixe o arquivo `quick-git-commit-X.Y.Z.vsix` da versão mais recente.
+2. No VS Code, abra **Extensões**, clique em `...` (canto superior do painel) e escolha **Instalar de VSIX...**.
+3. Selecione o arquivo baixado e recarregue o VS Code se ele pedir.
+
+Também funciona pelo terminal: `code --install-extension quick-git-commit-X.Y.Z.vsix`.
+
+**Atualizações:** quando sai uma versão nova, a extensão mostra um aviso com o botão **Baixar atualização**, que abre a página da release. Basta baixar o novo `.vsix` e instalar do mesmo jeito (ele substitui a versão antiga). A checagem acontece no máximo uma vez por dia e pode ser desligada em `quickGitCommit.checkForUpdates`. Para conferir na hora, use o comando **Quick Git: Verificar atualizações**.
+
+### Gerando o .vsix você mesmo
 
 ```bash
+npm install
 npm run package
 ```
 
-No VS Code, abra **Extensões**, clique em `...` e escolha **Instalar de VSIX...**, selecionando o arquivo gerado.
+O arquivo `.vsix` é criado na raiz do projeto. Instale como no passo 2 acima.
 
 ## Como usar
 
@@ -156,6 +167,7 @@ Também é possível usar a Command Palette (`Ctrl+Shift+P`):
 | `Quick Git: Abrir painel` | Abre o painel Git na barra lateral. |
 | `Quick Git: Atualizar painel` | Recarrega o estado do repositório. |
 | `Quick Git: Abrir guia inicial` | Abre o passo a passo de configuração. |
+| `Quick Git: Verificar atualizações` | Confere se existe uma versão mais nova no GitHub. |
 
 ## Atalhos e configurações
 
@@ -175,6 +187,7 @@ Clique com o botão direito em um arquivo (Explorer ou editor) para **Marcar arq
 | `quickGitCommit.messageMaxLength` | `72` | Limite da mensagem, sem o prefixo (`0` = sem limite) |
 | `quickGitCommit.askBranch` | `true` | Perguntar pela branch no commit rápido |
 | `quickGitCommit.defaultAction` | `ask` | `ask`, `commit` ou `commitAndPush` |
+| `quickGitCommit.checkForUpdates` | `true` | Avisar (no máximo 1 vez por dia) quando houver versão nova no GitHub |
 
 Tudo isso também pode ser ajustado dentro do painel, na engrenagem no topo (idioma, prefixos, limite e ação padrão), sem abrir o `settings.json`.
 
@@ -182,7 +195,7 @@ Tudo isso também pode ser ajustado dentro do painel, na engrenagem no topo (idi
 
 O objetivo é tornar o Quick Git Commit a forma mais fácil de usar Git dentro do VS Code. As prioridades abaixo podem mudar conforme o feedback da comunidade. Reaja com um polegar para cima nas issues das funções que você mais quer ver.
 
-**Disponível na v0.2.0**
+**Disponível**
 
 - [x] Commit rápido pela barra de status (Conventional Commits)
 - [x] Painel lateral visual
@@ -198,6 +211,7 @@ O objetivo é tornar o Quick Git Commit a forma mais fácil de usar Git dentro d
 - [x] Modo Simples e Avançado
 - [x] Detalhes do commit: arquivos alterados e diferenças
 - [x] Gráfico de branches com ramificações e junções
+- [x] Aviso de nova versão com link para download
 
 **Disponível na v0.3.0: experiência de uso**
 

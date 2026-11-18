@@ -1,0 +1,40 @@
+name: Release
+
+# Para lançar uma versão: aumente "version" no package.json, faça commit e depois:
+#   git tag v0.4.0 && git push origin v0.4.0
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Conferir se a tag bate com o package.json
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "v${PKG_VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "A tag (${GITHUB_REF_NAME}) não bate com a versão do package.json (v${PKG_VERSION})." >&2
+            exit 1
+          fi
+
+      - name: Gerar o .vsix
+        run: npm run package
+
+      - name: Criar a release no GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" ./*.vsix --title "${GITHUB_REF_NAME}" --generate-notes

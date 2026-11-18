@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { setGitAuth, setGitLogger } from './git';
 import { runQuickCommit } from './quickCommit';
 import { tr } from './i18n';
+import { checkForUpdates, scheduleUpdateCheck } from './updateCheck';
 import { DIFF_SCHEME, GitContentProvider, QuickGitViewProvider } from './panel';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -38,6 +39,10 @@ export function activate(context: vscode.ExtensionContext): void {
     provider.openGuide();
   });
 
+  const checkUpdates = vscode.commands.registerCommand('quickGitCommit.checkUpdates', () =>
+    checkForUpdates(context, (line) => output.appendLine(line), true)
+  );
+
   const act = (id: string, type: string) => vscode.commands.registerCommand(id, () => provider.action(type));
   const fetchCmd = act('quickGitCommit.fetch', 'fetch');
   const pullCmd = act('quickGitCommit.pull', 'pull');
@@ -69,6 +74,8 @@ export function activate(context: vscode.ExtensionContext): void {
     pullCmd,
     pushCmd,
     stageFile,
+    checkUpdates,
+    scheduleUpdateCheck(context, (line) => output.appendLine(line)),
     statusBarItem,
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('quickGitCommit') || e.affectsConfiguration('workbench.language')) {

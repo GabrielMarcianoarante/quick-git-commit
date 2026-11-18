@@ -2,6 +2,10 @@
    Chaves com {} são padrões (cada {} captura um trecho). O português é o idioma-base. */
 (function (root) {
   const P = [
+    ['Nova versão do Quick Git Commit disponível: {}. Você está usando a {}.', 'New Quick Git Commit version available: {}. You are using {}.'],
+    ['Você já está na versão mais recente ({}).', 'You are on the latest version ({}).'],
+    ['Não foi possível verificar atualizações agora.', 'Could not check for updates right now.'],
+    ['Baixar atualização', 'Download update'], ['Ignorar esta versão', 'Skip this version'],
     ['Sincronizar com a nuvem', 'Sync with the cloud'], ['Minhas alterações', 'My changes'],
     ['Atualizar minha branch', 'Update my branch'], ['Histórico', 'History'],
     ['Só confere se há novidades. Não mexe nos seus arquivos. (git fetch)', "Only checks for news. Doesn't touch your files. (git fetch)"],

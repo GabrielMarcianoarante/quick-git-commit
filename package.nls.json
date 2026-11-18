@@ -17,5 +17,7 @@
   "cfg.defaultAction": "What to do after writing the message. \"ask\" shows the options.",
   "cfg.defaultAction.ask": "Ask every time",
   "cfg.defaultAction.commit": "Commit only (local)",
-  "cfg.defaultAction.commitAndPush": "Commit and push"
+  "cfg.defaultAction.commitAndPush": "Commit and push",
+  "cmd.checkUpdates": "Quick Git: Check for updates",
+  "cfg.checkForUpdates": "Once a day, checks GitHub for a newer release and shows a notice with a download button. Nothing is installed automatically. Turn off if you install from a marketplace that updates the extension for you."
 }

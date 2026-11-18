@@ -2,7 +2,7 @@
   "name": "quick-git-commit",
   "displayName": "Quick Git Commit",
   "description": "%ext.description%",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "publisher": "GabrielMarcianoarante",
   "license": "PolyForm-Noncommercial-1.0.0",
   "engines": {
@@ -69,6 +69,10 @@
       {
         "command": "quickGitCommit.stageFile",
         "title": "%cmd.stageFile%"
+      },
+      {
+        "command": "quickGitCommit.checkUpdates",
+        "title": "%cmd.checkUpdates%"
       }
     ],
     "menus": {
@@ -230,6 +234,11 @@
           ],
           "default": "ask",
           "description": "%cfg.defaultAction%"
+        },
+        "quickGitCommit.checkForUpdates": {
+          "type": "boolean",
+          "default": true,
+          "description": "%cfg.checkForUpdates%"
         }
       }
     }
