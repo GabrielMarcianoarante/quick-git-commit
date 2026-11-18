@@ -22,9 +22,6 @@ import {
 export const DIFF_SCHEME = 'qgc-git';
 const ONBOARDING_KEY = 'quickGitCommit.onboardingDone';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Payload = Record<string, any>;
-
 /** Traduz erros comuns do Git para uma linguagem que qualquer pessoa entende. */
 function friendly(raw: string): string {
   const m = raw.toLowerCase();
@@ -69,11 +66,16 @@ function friendly(raw: string): string {
 export class GitContentProvider implements vscode.TextDocumentContentProvider {
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     try {
-      const q = JSON.parse(uri.query) as { root: string; ref: 'HEAD' | 'index' | 'none' | 'rev'; file: string; rev?: string };
+      const q = JSON.parse(uri.query) as { root: string; ref: 'HEAD' | 'index' | 'none' | 'rev' | 'ours' | 'theirs'; file: string; rev?: string };
       if (q.ref === 'none') {
         return '';
       }
       let spec = q.ref === 'HEAD' ? `HEAD:${q.file}` : `:${q.file}`;
+      if (q.ref === 'ours') {
+        spec = `:2:${q.file}`;
+      } else if (q.ref === 'theirs') {
+        spec = `:3:${q.file}`;
+      }
       if (q.ref === 'rev') {
         if (!isHash(q.rev)) {
           return '';
@@ -228,6 +230,9 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
           <div class="commitForm">
             <div class="label">1. Que tipo de mudança é essa?</div>
             <div id="typePills" class="pills" role="radiogroup" aria-label="Tipo do commit"></div>
+            <label class="label" for="scopeInput">Escopo <span class="muted">(opcional)</span></label>
+            <input id="scopeInput" type="text" list="scopeSuggestions" placeholder="ex.: login, api, painel" autocomplete="off" spellcheck="false" aria-label="Escopo do commit">
+            <datalist id="scopeSuggestions"></datalist>
             <label class="label" for="msgInput">2. Descreva o que você fez</label>
             <input id="msgInput" type="text" aria-describedby="msgCount commitHint" placeholder="ex.: adiciona tela de login" autocomplete="off" spellcheck="true">
             <div class="counter"><span id="msgCount">0/72</span></div>
@@ -255,6 +260,22 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
         <summary id="secHistory"><span class="sTitle" data-icon="history">Histórico</span><span id="historyBadge" class="badges"></span></summary>
         <div class="sBody">
           <div id="historyBody"></div>
+        </div>
+      </details>
+
+      <details class="section" data-key="stashes" open>
+        <summary id="secStashes"><span class="sTitle" data-icon="folder">Stashes</span><span id="stashesBadge" class="badges"></span></summary>
+        <div class="sBody">
+          <div class="row"><button id="btnStashSave" class="btn primary grow" type="button"></button></div>
+          <div id="stashesList"></div>
+        </div>
+      </details>
+
+      <details class="section" data-key="recovery">
+        <summary id="secRecovery"><span class="sTitle" data-icon="undo">Recuperação</span><span id="recoveryBadge" class="badges"></span></summary>
+        <div class="sBody">
+          <p class="hint">Escolha um momento perdido para criar uma branch segura. Cada item mostra o que aconteceu e não altera a sua branch atual.</p>
+          <div id="recoveryList"></div>
         </div>
       </details>
     </main>
@@ -552,7 +573,10 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
         void this.enqueue('Atualizando sua branch...', (r) => this.doUpdate(r, p));
         break;
       case 'resolve':
-        void this.enqueue(undefined, (r) => this.doResolve(r, String(p.path ?? '')));
+        void this.enqueue('Aplicando resolução...', (r) => this.doResolve(r, String(p.path ?? ''), String(p.choice ?? '')));
+        break;
+      case 'compareConflict':
+        void this.enqueue(undefined, (r) => this.openConflictDiff(r, String(p.path ?? '')));
         break;
       case 'continueOp':
         void this.enqueue('Continuando...', (r) => this.doContinue(r));
@@ -562,6 +586,9 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
         break;
       case 'undoCommit':
         void this.enqueue('Desfazendo commit...', (r) => this.doUndoCommit(r));
+        break;
+      case 'amendCommit':
+        void this.enqueue('Editando o último commit...', (r) => this.doAmendCommit(r));
         break;
       case 'commitDetails':
         void this.enqueue(undefined, (r) => this.sendCommitDetails(r, String(p.hash ?? '')));
@@ -587,6 +614,21 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
         break;
       case 'ob.openFolder':
         void vscode.commands.executeCommand('workbench.action.files.openFolder');
+        break;
+      case 'stashSave':
+        void this.enqueue('Guardando alterações...', (r) => this.doStashSave(r));
+        break;
+      case 'stashApply':
+        void this.enqueue('Recuperando stash...', (r) => this.doStash(r, String(p.stash ?? ''), 'apply'));
+        break;
+      case 'stashPop':
+        void this.enqueue('Recuperando e removendo stash...', (r) => this.doStash(r, String(p.stash ?? ''), 'pop'));
+        break;
+      case 'stashDrop':
+        void this.enqueue('Excluindo stash...', (r) => this.doStash(r, String(p.stash ?? ''), 'drop'));
+        break;
+      case 'reflogRecover':
+        void this.enqueue('Recuperando ponto do histórico...', (r) => this.doReflogRecover(r, String(p.hash ?? '')));
         break;
       default:
         break;
@@ -758,7 +800,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       }
       this.toast('Pronto! Sua branch foi atualizada ✔');
     } catch (e) {
-      if ((await currentOperation(root)) !== 'none') {
+      if (await currentOperation(root) !== 'none') {
         void ui.warn(
           'Quick Git: encontrei conflitos. Resolva os arquivos listados no painel e clique em "Continuar".'
         );
@@ -894,7 +936,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       await vscode.window.showTextDocument(vscode.Uri.file(abs));
       return;
     }
-    const mk = (ref: 'HEAD' | 'index' | 'none'): vscode.Uri =>
+    const mk = (ref: 'HEAD' | 'index' | 'none' | 'rev' | 'ours' | 'theirs'): vscode.Uri =>
       vscode.Uri.from({ scheme: DIFF_SCHEME, path: '/' + file, query: JSON.stringify({ root, ref, file }) });
 
     const base = path.basename(file);
@@ -917,6 +959,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
   private async doCommit(root: string, p: Payload): Promise<void> {
     const type = String(p.type ?? '');
     const message = String(p.message ?? '').replace(/\s+/g, ' ').trim();
+    const scope = String(p.scope ?? '').replace(/\s+/g, '').trim();
     const details = String(p.details ?? '').trim();
     const conf = getConfig();
     if (!conf.types.some((t) => t.id === type)) {
@@ -924,6 +967,9 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     }
     if (!message) {
       throw new Error('Escreva uma mensagem para o commit.');
+    }
+    if (scope && !/^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.-]*)*$/.test(scope)) {
+      throw new Error('Use um escopo curto, como login, api ou painel/perfil.');
     }
     if (conf.maxLen > 0 && message.length > conf.maxLen) {
       throw new Error(`A mensagem passa de ${conf.maxLen} caracteres (${message.length}).`);
@@ -935,7 +981,8 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     if (!files.some((f) => f.staged && !f.conflict)) {
       throw new Error('Marque pelo menos um arquivo para incluir no commit.');
     }
-    const args = ['commit', '-m', `${type}: ${message}`];
+    const subject = `${type}${scope ? `(${scope})` : ''}: ${message}`;
+    const args = ['commit', '-m', subject];
     if (details) {
       args.push('-m', details);
     }
@@ -944,7 +991,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     if (p.push) {
       await this.doPush(root);
     } else {
-      this.toast(`Commit salvo: ${type}: ${message}`);
+      this.toast(`Commit salvo: ${subject}`);
     }
   }
 
@@ -981,19 +1028,61 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     await this.integrate(root, mode, base);
   }
 
-  private async doResolve(root: string, file: string): Promise<void> {
+  private async doResolve(root: string, file: string, choice: string): Promise<void> {
     const state = await readState(root);
     if (!state.conflicts.includes(file)) {
       return;
     }
-    await git(root, ['add', '--', file]);
+
+    if (choice === 'mine') {
+      await git(root, ['checkout', '--ours', '--', file]).catch(async () => {
+        await git(root, ['rm', '--', file]);
+        await git(root, ['add', '--', file]).catch(() => undefined);
+      });
+      await git(root, ['add', '--', file]);
+      this.toast(`Mantidas as suas mudanças em "${file}" ✔`);
+      return;
+    }
+    if (choice === 'theirs') {
+      await git(root, ['checkout', '--theirs', '--', file]).catch(async () => {
+        await git(root, ['rm', '--', file]);
+        await git(root, ['add', '--', file]).catch(() => undefined);
+      });
+      await git(root, ['add', '--', file]);
+      this.toast(`Mantidas as mudanças da outra versão em "${file}" ✔`);
+      return;
+    }
+
+    await vscode.window.showTextDocument(vscode.Uri.file(path.join(root, file)));
+  }
+
+  private async openConflictDiff(root: string, file: string): Promise<void> {
+    const state = await readState(root);
+    if (!state.conflicts.includes(file)) {
+      return;
+    }
+    const abs = path.join(root, file);
+    const mk = (ref: 'ours' | 'theirs'): vscode.Uri =>
+      vscode.Uri.from({ scheme: DIFF_SCHEME, path: '/' + file, query: JSON.stringify({ root, ref, file }) });
+
+    const ours = mk('ours');
+    const theirs = mk('theirs');
+    await vscode.commands.executeCommand(
+      'vscode.diff',
+      ours,
+      theirs,
+      `${path.basename(file)} — suas mudanças ↔ mudanças da outra versão`
+    );
+    if (!fs.existsSync(abs)) {
+      return;
+    }
   }
 
   private async doContinue(root: string): Promise<void> {
     const op = await currentOperation(root);
     const status = await readStatus(root);
     if (status.some((f) => f.conflict)) {
-      throw new Error('Ainda há arquivos em conflito. Resolva todos e marque como resolvidos.');
+      throw new Error('Ainda há arquivos em conflito. Resolva todos antes de continuar.');
     }
     try {
       if (op === 'rebase') {
@@ -1018,17 +1107,6 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     if (op === 'none') {
       return;
     }
-    const pick = await ui.warn(
-      'Cancelar a atualização?',
-      {
-        modal: true,
-        detail: 'Sua branch volta exatamente ao que era antes de você começar. Nenhum trabalho é perdido.',
-      },
-      'Cancelar atualização'
-    );
-    if (pick !== 'Cancelar atualização') {
-      return;
-    }
     await git(root, op === 'rebase' ? ['rebase', '--abort'] : ['merge', '--abort']);
     this.toast('Atualização cancelada. Tudo voltou como era ✔');
   }
@@ -1039,91 +1117,95 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       throw new Error('Só é possível desfazer commits que ainda não foram enviados para a nuvem.');
     }
     const lastSubject = await git(root, ['log', '-1', '--format=%s']).catch(() => '');
-    const pick = await ui.warn(
-      'Desfazer o último commit?',
-      {
-        modal: true,
-        detail: `"${lastSubject}" deixa de ser um commit, mas as alterações continuam nos seus arquivos, prontas para um novo commit.`,
-      },
-      'Desfazer commit'
-    );
-    if (pick !== 'Desfazer commit') {
-      return;
-    }
+    const pick = await ui.warn('Desfazer o último commit?', {
+      modal: true,
+      detail: `"${lastSubject}" deixa de ser um commit, mas as alterações continuam nos seus arquivos, prontas para um novo commit.`,
+    }, 'Desfazer commit');
+    if (pick !== 'Desfazer commit') return;
     await git(root, ['reset', '--soft', 'HEAD~1']);
     this.toast('Commit desfeito. Suas alterações continuam aqui ✔');
   }
 
-  /** Reabre o guia inicial no painel (comando e botão do topo). */
+  private async doAmendCommit(root: string): Promise<void> {
+    const state = await readState(root);
+    if (!state.hasCommits || state.operation !== 'none') {
+      throw new Error('Não há um último commit disponível ou há uma atualização em andamento.');
+    }
+    const last = state.history.find((c) => c.head);
+    if (!last) throw new Error('Não encontrei o último commit atual.');
+
+    if (!last.unpushed) {
+      const choice = await ui.warn('Este commit já foi enviado para a nuvem.', {
+        modal: true,
+        detail: 'Editar cria um novo identificador. Depois será necessário substituir o commit remoto.',
+      }, 'Editar mesmo assim', 'Cancelar');
+      if (choice !== 'Editar mesmo assim') return;
+    }
+
+    const action = await ui.pick([
+      { label: 'Alterar somente a mensagem', description: 'Mantém os arquivos exatamente como estão' },
+      { label: 'Incluir alterações marcadas', description: 'Inclui arquivos marcados no último commit' },
+      { label: 'Alterar mensagem e incluir alterações', description: 'Faz os dois ao mesmo tempo' },
+    ], { title: 'Editar o último commit', placeHolder: 'O que você quer corrigir?' });
+    if (!action) return;
+
+    const changeMessage = action.label !== 'Incluir alterações marcadas';
+    const includeStaged = action.label !== 'Alterar somente a mensagem';
+    let newMessage: string | undefined;
+    if (changeMessage) {
+      newMessage = await ui.input({
+        prompt: 'Nova mensagem do último commit',
+        value: last.subject,
+        valueSelection: [0, last.subject.length],
+        validateInput: (value) => value.trim() ? undefined : 'Escreva uma mensagem para o commit.',
+      });
+      if (newMessage === undefined) return;
+      newMessage = newMessage.trim();
+      if (!newMessage) throw new Error('Escreva uma mensagem para o commit.');
+    }
+    if (includeStaged && !state.files.some((file) => file.staged)) {
+      throw new Error('Nenhum arquivo está marcado. Marque o arquivo esquecido em "Minhas alterações" e tente de novo.');
+    }
+    await git(root, changeMessage ? ['commit', '--amend', '-m', newMessage as string] : ['commit', '--amend', '--no-edit']);
+    this.toast(changeMessage && includeStaged ? 'Último commit atualizado com mensagem e arquivos ✔' : changeMessage ? 'Mensagem do último commit atualizada ✔' : 'Arquivos marcados incluídos no último commit ✔');
+  }
+
   openGuide(): void {
     this.post({ type: 'openGuide' });
   }
 
-  // ---------- Detalhes de um commit ----------
-
   private async sendCommitDetails(root: string, hash: string): Promise<void> {
-    if (!isHash(hash)) {
-      return;
-    }
-    const details = await readCommitDetails(root, hash);
-    this.post({ type: 'commitDetails', details });
+    if (!isHash(hash)) return;
+    this.post({ type: 'commitDetails', details: await readCommitDetails(root, hash) });
   }
 
   private async openCommitDiff(root: string, hash: string, file: string): Promise<void> {
-    if (!isHash(hash)) {
-      return;
-    }
+    if (!isHash(hash)) return;
     const details = await readCommitDetails(root, hash);
     const entry = details.files.find((f) => f.path === file);
-    if (!entry) {
-      return;
-    }
+    if (!entry) return;
     const parent = await git(root, ['rev-parse', '--verify', '-q', `${hash}^1`]).catch(() => '');
-    const mk = (rev: string | undefined, name: string): vscode.Uri =>
-      vscode.Uri.from({
-        scheme: DIFF_SCHEME,
-        path: '/' + name,
-        query: JSON.stringify({ root, ref: rev ? 'rev' : 'none', rev, file: name }),
-      });
+    const mk = (rev: string | undefined, name: string): vscode.Uri => vscode.Uri.from({
+      scheme: DIFF_SCHEME,
+      path: '/' + name,
+      query: JSON.stringify({ root, ref: rev ? 'rev' : 'none', rev, file: name }),
+    });
     const leftName = entry.oldPath ?? entry.path;
     const left = entry.status === 'A' || !parent ? mk(undefined, leftName) : mk(parent, leftName);
     const right = entry.status === 'D' ? mk(undefined, entry.path) : mk(hash, entry.path);
-    const short = hash.slice(0, 7);
-    await vscode.commands.executeCommand('vscode.diff', left, right, `${path.basename(file)} (antes ↔ ${short})`);
+    await vscode.commands.executeCommand('vscode.diff', left, right, `${path.basename(file)} (antes ↔ commit)`);
   }
-
-  // ---------- Guia inicial (onboarding) ----------
 
   private async onboardingInfo(root: string | undefined, hasFolder: boolean): Promise<Payload> {
     const cwd = root ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir();
-    const gitVersion = await git(cwd, ['--version'])
-      .then((v) => v.replace(/^git version\s*/, ''))
-      .catch(() => null);
-    const cfg = async (key: string): Promise<string> => (gitVersion ? git(cwd, ['config', key]).catch(() => '') : '');
+    const gitVersion = await git(cwd, ['--version']).then((v) => v.replace(/^git version\s*/, '')).catch(() => null);
+    const cfg = async (key: string): Promise<string> => gitVersion ? git(cwd, ['config', key]).catch(() => '') : '';
     const [userName, userEmail] = await Promise.all([cfg('user.name'), cfg('user.email')]);
-
     let login: string | undefined;
-    try {
-      const session = await vscode.authentication.getSession('github', ['repo'], { silent: true });
-      login = session?.account.label;
-    } catch {
-      login = undefined;
-    }
-
+    try { login = (await vscode.authentication.getSession('github', ['repo'], { silent: true }))?.account.label; } catch { login = undefined; }
     let hasRemote = false;
-    if (root) {
-      hasRemote = (await git(root, ['remote']).catch(() => '')).trim() !== '';
-    }
-    return {
-      done: this.globalState.get<boolean>(ONBOARDING_KEY, false),
-      gitVersion,
-      userName,
-      userEmail,
-      hasFolder,
-      isRepo: !!root,
-      hasRemote,
-      github: { signedIn: !!login, login },
-    };
+    if (root) hasRemote = (await git(root, ['remote']).catch(() => '')).trim() !== '';
+    return { done: this.globalState.get<boolean>(ONBOARDING_KEY, false), gitVersion, userName, userEmail, hasFolder, isRepo: !!root, hasRemote, github: { signedIn: !!login, login } };
   }
 
   private async setIdentity(): Promise<void> {
@@ -1131,34 +1213,14 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     try {
       const currentName = await git(cwd, ['config', 'user.name']).catch(() => '');
       const currentEmail = await git(cwd, ['config', 'user.email']).catch(() => '');
-      const name = await ui.input({
-        title: 'Seu nome (1/2)',
-        prompt: 'Este nome aparece nos commits que você faz',
-        value: currentName,
-        placeHolder: 'Maria Silva',
-        ignoreFocusOut: true,
-        validateInput: (v) => (v.trim() ? undefined : 'Informe seu nome.'),
-      });
-      if (!name) {
-        return;
-      }
-      const email = await ui.input({
-        title: 'Seu e-mail (2/2)',
-        prompt: 'Use o mesmo e-mail da sua conta do GitHub para os commits aparecerem no seu perfil',
-        value: currentEmail,
-        placeHolder: 'voce@email.com',
-        ignoreFocusOut: true,
-        validateInput: (v) => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) ? undefined : 'Informe um e-mail válido.'),
-      });
-      if (!email) {
-        return;
-      }
+      const name = await ui.input({ title: 'Seu nome', prompt: 'Este nome aparece nos commits', value: currentName, validateInput: (v) => v.trim() ? undefined : 'Informe seu nome.' });
+      if (!name) return;
+      const email = await ui.input({ title: 'Seu e-mail', prompt: 'Use o e-mail da sua conta do GitHub', value: currentEmail, validateInput: (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) ? undefined : 'Informe um e-mail válido.' });
+      if (!email) return;
       await git(cwd, ['config', '--global', 'user.name', name.trim()]);
       await git(cwd, ['config', '--global', 'user.email', email.trim()]);
       this.toast('Nome e e-mail salvos ✔');
-    } catch (e) {
-      this.showError(e);
-    }
+    } catch (e) { this.showError(e); }
     await this.refresh(true);
   }
 
@@ -1167,73 +1229,66 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
       this.toast(`Conectado ao GitHub como ${session.account.label} ✔`);
     } catch (e) {
-      const raw = e instanceof Error ? e.message : String(e);
-      if (!/cancel/i.test(raw)) {
-        this.showError(e);
-      }
+      if (!/cancel/i.test(e instanceof Error ? e.message : String(e))) this.showError(e);
     }
     await this.refresh(true);
   }
 
   private async createGithubRepo(root: string): Promise<void> {
     const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
-    const name = await ui.input({
-      title: 'Nome do repositório no GitHub',
-      prompt: 'Letras, números, hífen, ponto e sublinhado',
-      value: path.basename(root).replace(/[^A-Za-z0-9._-]+/g, '-'),
-      ignoreFocusOut: true,
-      validateInput: (v) => (/^[A-Za-z0-9._-]{1,100}$/.test(v.trim()) ? undefined : 'Use apenas letras, números, hífen, ponto e sublinhado.'),
-    });
-    if (!name) {
-      return;
-    }
-    const visibility = await ui.pick(
-      [
-        { label: '$(lock) Privado', description: 'Só você (e quem você convidar) vê', value: true },
-        { label: '$(globe) Público', description: 'Qualquer pessoa pode ver', value: false },
-      ],
-      { title: 'Quem pode ver este repositório?', ignoreFocusOut: true }
-    );
-    if (!visibility) {
-      return;
-    }
-
-    const response = await fetch('https://api.github.com/user/repos', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'Content-Type': 'application/json',
-        'User-Agent': 'quick-git-commit-vscode',
-      },
-      body: JSON.stringify({ name: name.trim(), private: visibility.value }),
-    });
-    if (response.status === 422) {
-      throw new Error('Você já tem um repositório com esse nome no GitHub. Escolha outro nome.');
-    }
-    if (response.status === 401 || response.status === 403) {
-      throw new Error('O GitHub não autorizou a criação. Entre novamente na sua conta e tente de novo.');
-    }
-    if (!response.ok) {
-      throw new Error(`O GitHub respondeu com erro ${response.status}. Tente novamente em instantes.`);
-    }
+    const name = await ui.input({ title: 'Nome do repositório no GitHub', prompt: 'Letras, números, hífen, ponto e sublinhado', value: path.basename(root).replace(/[^A-Za-z0-9._-]+/g, '-') });
+    if (!name) return;
+    const visibility = await ui.pick([{ label: '$(lock) Privado', description: 'Só você e convidados', value: true }, { label: '$(globe) Público', description: 'Qualquer pessoa pode ver', value: false }], { title: 'Quem pode ver este repositório?' });
+    if (!visibility) return;
+    const response = await fetch('https://api.github.com/user/repos', { method: 'POST', headers: { Authorization: `Bearer ${session.accessToken}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'quick-git-commit-vscode' }, body: JSON.stringify({ name: name.trim(), private: visibility.value }) });
+    if (!response.ok) throw new Error(`O GitHub respondeu com erro ${response.status}.`);
     const created = (await response.json()) as { clone_url: string; html_url: string };
-
     const remotes = (await git(root, ['remote'])).split('\n').filter(Boolean);
-    if (remotes.includes('origin')) {
-      await git(root, ['remote', 'set-url', 'origin', created.clone_url]);
-    } else {
-      await git(root, ['remote', 'add', 'origin', created.clone_url]);
-    }
-
+    if (remotes.includes('origin')) await git(root, ['remote', 'set-url', 'origin', created.clone_url]);
+    else await git(root, ['remote', 'add', 'origin', created.clone_url]);
     const branch = await git(root, ['branch', '--show-current']);
-    const hasCommits = await gitOk(root, ['rev-parse', '--verify', '-q', 'HEAD']);
-    if (hasCommits && branch) {
+    if (await gitOk(root, ['rev-parse', '--verify', '-q', 'HEAD']) && branch) {
       await git(root, ['push', '-u', 'origin', branch]);
       this.toast(`Repositório criado e enviado: ${created.html_url} ✔`);
+    } else this.toast('Repositório criado e conectado ✔');
+  }
+
+  private async doStashSave(root: string): Promise<void> {
+    const name = await ui.input({ title: 'Guardar alterações temporariamente', prompt: 'Dê um nome para facilitar a recuperação', placeHolder: 'ex.: tela de login' });
+    if (name === undefined) return;
+    await git(root, ['stash', 'push', '-u', '-m', name.trim() || 'Alterações guardadas']);
+    this.toast('Alterações guardadas temporariamente ✔');
+  }
+
+  private async doStash(root: string, stash: string, action: 'apply' | 'pop' | 'drop'): Promise<void> {
+    if (!stash) throw new Error('Stash inválido.');
+    if (action === 'drop') {
+      const ok = await ui.warn('Excluir este stash permanentemente?', { modal: true, detail: 'As alterações guardadas serão apagadas.' }, 'Excluir stash');
+      if (ok !== 'Excluir stash') return;
+    }
+    if (action === 'apply') {
+      await git(root, ['stash', 'apply', stash]);
+      this.toast('Alterações recuperadas do stash ✔');
+    } else if (action === 'pop') {
+      await git(root, ['stash', 'pop', stash]);
+      this.toast('Alterações recuperadas e stash removido ✔');
     } else {
-      this.toast('Repositório criado e conectado ✔ Faça o primeiro commit e clique em "Enviar".');
+      await git(root, ['stash', 'drop', stash]);
+      this.toast('Stash excluído ✔');
     }
   }
+
+  private async doReflogRecover(root: string, hash: string): Promise<void> {
+    if (!isHash(hash)) throw new Error('Ponto de recuperação inválido.');
+    const branches = await git(root, ['branch', '--format=%(refname:short)']).catch(() => '');
+    const suffix = hash.slice(0, 7);
+    let name = `recovery-${suffix}`;
+    let n = 2;
+    while (branches.split('\n').includes(name)) name = `recovery-${suffix}-${n++}`;
+    await git(root, ['branch', name, hash]);
+    this.toast(`Branch recuperada: ${name} ✔`);
+  }
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Payload = Record<string, any>;

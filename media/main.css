@@ -342,3 +342,17 @@ input.numInput[type="text"] { width: 72px; flex: none; text-align: center; }
 .switch .knob { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--vscode-foreground); opacity: .7; transition: transform .15s; }
 .switch.on { background: var(--vscode-button-background); border-color: transparent; }
 .switch.on .knob { transform: translateX(16px); background: var(--vscode-button-foreground); opacity: 1; }
+
+/* ---------- Stashes e recuperação ---------- */
+.stash, .recoveryItem { display: flex; align-items: center; gap: 10px; padding: 9px; margin-top: 6px; border: 1px solid var(--vscode-widget-border, rgba(127,127,127,.25)); border-radius: 8px; background: var(--vscode-editor-background); }
+.stash:first-child, .recoveryItem:first-child { margin-top: 0; }
+.stash:hover, .recoveryItem:hover { background: var(--vscode-list-hoverBackground); }
+.stashInfo, .recoveryInfo { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.stashName, .recoveryTitle { font-weight: 600; }
+.stashMeta, .recoveryMeta, .recoverySubject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stashMeta, .recoveryMeta { font-size: .78em; color: var(--vscode-descriptionForeground); }
+.recoverySubject { font-size: .88em; color: var(--vscode-descriptionForeground); }
+.recoveryTitle { display: flex; align-items: center; gap: 6px; }
+.recoveryKind { font-size: .68em; text-transform: uppercase; letter-spacing: .4px; padding: 1px 6px; border-radius: 999px; color: var(--vscode-editorInfo-foreground, #3794ff); background: rgba(55,148,255,.14); }
+.stashActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.btn.danger { color: var(--vscode-errorForeground); border-color: var(--vscode-errorForeground); }

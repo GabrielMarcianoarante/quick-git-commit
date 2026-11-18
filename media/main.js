@@ -105,6 +105,8 @@
       secChanges: 'Minhas alterações',
       secUpdate: 'Atualizar minha branch',
       secHistory: 'Histórico',
+      secStashes: 'Stashes',
+      secRecovery: 'Recuperar itens perdidos',
       fetch: 'Buscar',
       pull: 'Trazer',
       push: 'Enviar',
@@ -117,6 +119,8 @@
       merge: 'Atualizar com Merge',
       undo: 'Desfazer último commit',
       undoTip: 'Desfaz o commit mais recente, mantendo as suas alterações. (git reset --soft HEAD~1)',
+      amend: 'Editar último commit',
+      amendTip: 'Corrige a mensagem ou inclui um arquivo esquecido no commit mais recente.',
       publish: 'Publicar na nuvem',
       connect: 'Conectar à nuvem',
       markAll: 'Marcar tudo',
@@ -129,6 +133,8 @@
       secChanges: 'Working tree e index',
       secUpdate: 'rebase · merge',
       secHistory: 'git log --graph',
+      secStashes: 'git stash',
+      secRecovery: 'git reflog',
       fetch: 'fetch',
       pull: 'pull',
       push: 'push',
@@ -141,6 +147,8 @@
       merge: 'git merge',
       undo: 'git reset --soft HEAD~1',
       undoTip: 'Desfazer último commit, mantendo as alterações no index.',
+      amend: 'git commit --amend',
+      amendTip: 'Alterar a mensagem ou incluir alterações staged no último commit.',
       publish: 'git push -u origin',
       connect: 'git remote add origin',
       markAll: 'git add -A',
@@ -155,6 +163,7 @@
   const ui = {
     type: saved.type || 'feat',
     message: saved.message || '',
+    scope: saved.scope || '',
     details: saved.details || '',
     base: saved.base || '',
     open: saved.open || {},
@@ -204,6 +213,8 @@
       render();
     });
     $('btnNewBranch').addEventListener('click', () => post('newBranch'));
+    $('btnStashSave').append(icon('folder'));
+    $('btnStashSave').addEventListener('click', () => post('stashSave'));
 
     document.querySelectorAll('.segBtn').forEach((b) =>
       b.addEventListener('click', () => {
@@ -266,6 +277,7 @@
     renderPills();
 
     $('msgInput').value = ui.message;
+    $('scopeInput').value = ui.scope;
     $('detailsInput').value = ui.details;
     $('msgInput').addEventListener('input', (e) => {
       ui.message = e.target.value;
@@ -277,6 +289,11 @@
       // Enter = ação padrão; Ctrl/Cmd+Enter = commit e enviar; Shift+Enter = só commit.
       const push = e.shiftKey ? false : e.ctrlKey || e.metaKey ? true : CFG.defaultAction === 'commitAndPush';
       if (!$(push ? 'btnCommitPush' : 'btnCommit').disabled) sendCommit(push);
+    });
+    $('scopeInput').addEventListener('input', (e) => {
+      ui.scope = e.target.value;
+      save();
+      if (state && state.isRepo) renderCommit();
     });
     $('detailsInput').addEventListener('input', (e) => {
       ui.details = e.target.value;
@@ -305,7 +322,7 @@
   }
 
   function sendCommit(push) {
-    post('commit', { type: ui.type, message: ui.message, details: ui.details, push });
+    post('commit', { type: ui.type, scope: ui.scope, message: ui.message, details: ui.details, push });
   }
 
   // ---------- Renderização ----------
@@ -439,8 +456,11 @@
     renderBanner();
     renderSync();
     renderFiles();
+    updateScopeSuggestions();
     renderCommit();
     renderUpdate();
+    renderStashes();
+    renderReflog();
     renderHistory();
   }
 
@@ -455,6 +475,8 @@
     setTitle('secChanges', t.secChanges);
     setTitle('secUpdate', t.secUpdate);
     setTitle('secHistory', t.secHistory);
+    setTitle('secStashes', advanced() ? 'git stash' : 'Stashes');
+    setTitle('secRecovery', advanced() ? 'git reflog' : 'Recuperar itens perdidos');
     $('baseLabel').textContent = t.baseLabel;
 
     const c = $('btnCommit');
@@ -627,7 +649,11 @@
             { class: 'conflict' },
             h('span', { class: 'fileName', title: f }, h('span', { class: 'base', text: basenameOf(f) }), h('span', { class: 'dir', text: dirOf(f) })),
             btn('Abrir', { icon: 'open', small: true, onclick: () => post('openFile', { path: f }) }),
-            btn('Resolvido', { icon: 'check', small: true, kind: 'primary', title: advanced() ? 'git add <arquivo>' : undefined, onclick: () => post('resolve', { path: f }) })
+            btn('Resolvido', { icon: 'check', small: true, kind: 'primary', title: advanced() ? 'git add <arquivo>' : undefined, onclick: () => post('resolve', { path: f }) }),
+            btn('Comparar', { icon: 'eye', small: true, onclick: () => post('compareConflict', { path: f }) }),
+            btn('Minhas', { icon: 'check', small: true, title: 'Manter suas mudanças', onclick: () => post('resolve', { path: f, choice: 'mine' }) }),
+            btn('Da outra versão', { icon: 'download', small: true, kind: 'primary', title: 'Manter as mudanças da branch que está entrando', onclick: () => post('resolve', { path: f, choice: 'theirs' }) }),
+            btn('Editar', { icon: 'open', small: true, title: 'Abrir o arquivo e combinar manualmente', onclick: () => post('resolve', { path: f, choice: 'manual' }) })
           )
         );
       }
@@ -768,12 +794,31 @@
     }
   }
 
+  function updateScopeSuggestions() {
+    const datalist = $('scopeSuggestions');
+    if (!datalist || !state) return;
+    const scopes = new Set();
+    for (const file of state.files || []) {
+      const parts = file.path.split('/');
+      if (parts.length > 1) scopes.add(parts[0]);
+      if (parts.length > 2) scopes.add(parts.slice(0, 2).join('/'));
+    }
+    for (const commit of state.history || []) {
+      const match = /^[^:(]+\(([\w.-]+(?:\/[\w.-]+)?)\)/.exec(commit.subject);
+      if (match) scopes.add(match[1]);
+    }
+    datalist.replaceChildren(...[...scopes].filter(Boolean).sort().map((scope) => h('option', { value: scope })));
+  }
+
   function renderCommit() {
     const stagedCount = state.files.filter((f) => f.staged).length;
     const msg = ui.message.trim();
+    const scope = ui.scope.trim();
     const blocked = state.operation !== 'none' || state.conflicts.length > 0;
     const tooLong = MAXLEN > 0 && ui.message.length > MAXLEN;
-    const can = stagedCount > 0 && msg.length > 0 && !blocked && !tooLong;
+    const scopeValid = !scope || /^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\/[A-Za-z0-9][A-ZaZ0-9_.-]*)*$/.test(scope);
+    const formatted = ui.type + (scopeValid && scope ? '(' + scope + ')' : '') + ': ' + msg;
+    const can = stagedCount > 0 && msg.length > 0 && !blocked && !tooLong && scopeValid;
     $('btnCommit').disabled = !can;
     $('btnCommitPush').disabled = !can || state.detached;
     const len = ui.message.length;
@@ -784,12 +829,13 @@
 
     let hint = '';
     if (blocked) hint = 'Termine a atualização em andamento antes de fazer um novo commit.';
+    else if (!scopeValid) hint = 'Use um escopo curto, como login, api ou painel/perfil.';
     else if (tooLong) hint = `A mensagem passa de ${MAXLEN} caracteres (${ui.message.length}).`;
     else if (state.files.length === 0) hint = 'Quando você mudar algum arquivo, ele aparece aqui.';
     else if (stagedCount === 0) hint = 'Marque na lista acima os arquivos que entram neste commit.';
     else if (!msg) hint = 'Escreva uma descrição curta do que você fez.';
-    else if (advanced()) hint = 'git commit -m "' + ui.type + ': ' + msg + '"  (' + stagedCount + ' ' + plural(stagedCount, 'arquivo', 'arquivos') + ' no index)';
-    else hint = stagedCount + ' ' + plural(stagedCount, 'arquivo marcado', 'arquivos marcados') + '. Será salvo como "' + ui.type + ': ' + msg + '".';
+    else if (advanced()) hint = 'git commit -m "' + formatted + '"  (' + stagedCount + ' ' + plural(stagedCount, 'arquivo', 'arquivos') + ' no index)';
+    else hint = stagedCount + ' ' + plural(stagedCount, 'arquivo marcado', 'arquivos marcados') + '. Será salvo como "' + formatted + '".';
     $('commitHint').textContent = hint;
   }
 
@@ -839,173 +885,59 @@
         btn(mergeLabel, { icon: 'merge', mono: advanced(), disabled: off, onclick: () => post('update', { mode: 'merge', base: ui.base }) })
       )
     );
-    if (all.length === 0) {
-      body.prepend(h('p', { class: 'hint', text: 'Ainda não há outra branch para trazer novidades.' }));
+    if (off) {
+      body.append(h('p', { class: 'hint', text: 'Escolha uma base para atualizar sua branch.' }));
     }
   }
 
-  // ---------- Histórico com gráfico ----------
-  const GW = 14; // largura de cada coluna do gráfico
-  const GPAD = 6;
+  // ---------- Painel principal (dinâmico) ----------
+  function renderRepoInfo() {
+    const head = $('repoHead');
+    head.replaceChildren();
+    if (!state.isRepo) return;
 
-  function graphCell(row, lanes, c) {
-    const width = GPAD * 2 + lanes * GW;
-    const X = (i) => GPAD + Graph.clamp(i) * GW + GW / 2;
-    const svg = svgEl('svg', { class: 'gsvg', width, height: '100%', viewBox: '0 0 ' + width + ' 100', preserveAspectRatio: 'none', 'aria-hidden': 'true' });
-    const line = (x1, y1, x2, y2, color) => {
-      const my = (y1 + y2) / 2;
-      const d = x1 === x2 ? 'M' + x1 + ' ' + y1 + ' L' + x2 + ' ' + y2 : 'M' + x1 + ' ' + y1 + ' C' + x1 + ' ' + my + ' ' + x2 + ' ' + my + ' ' + x2 + ' ' + y2;
-      svg.append(svgEl('path', { d, stroke: color, class: 'gline', fill: 'none' }));
-    };
-    row.pass.forEach((i) => line(X(i), 0, X(i), 100, Graph.colorOf(i)));
-    row.top.forEach((i) => line(X(i), 0, X(row.col), 50, Graph.colorOf(i)));
-    row.bottom.forEach((i) => line(X(row.col), 50, X(i), 100, Graph.colorOf(i)));
-
-    const dot = h('span', { class: 'gdot' + (c.merge ? ' merge' : '') + (c.head ? ' head' : '') });
-    dot.style.left = X(row.col) - 5 + 'px';
-    dot.style.background = Graph.colorOf(row.col);
-    const cell = h('div', { class: 'gutter', style: 'width:' + width + 'px' }, svg, dot);
-    return cell;
+    const url = state.remoteUrl || '';
+    const rem = url.replace(/^.*@|^https?:\/\//, '').replace(/\/.*$/, '');
+    const name = state.repoName.replace(/\.git$/, '');
+    const title = h('h1', { class: 'repoTitle' }, h('span', { text: name }), h('span', { class: 'repoMeta', text: rem }));
+    const desc = h('p', { class: 'repoDesc' }, url );
+    head.append(title, desc);
   }
 
-  function commitRow(c, row, lanes) {
-    const t = T();
-    const refs = h('div', { class: 'refs' });
-    for (const r of c.refs) {
-      refs.append(h('span', { class: 'ref ' + (r.kind === 'tag' ? 'rtag' : r.kind) + (r.head ? ' head' : ''), text: r.name }));
-    }
-    if (c.unpushed) refs.append(h('span', { class: 'tag warn', text: advanced() ? 'ahead' : 'não enviado' }));
-    if (c.incoming) refs.append(h('span', { class: 'tag info', text: advanced() ? 'behind' : 'só na nuvem' }));
+  // ---------- Comunicação com o backend (extensão) ----------
+  window.receiveState = (s) => {
+    state = s;
+    render();
+  };
+  window.receiveDetails = (id, details) => {
+    detailsCache[id] = details;
+    if (id === ui.expanded) renderCommit();
+  };
+  window.receiveError = (error) => {
+    const msg = typeof error === 'string' ? error : error.message || String(error);
+    $('errorMsg').textContent = msg;
+    $('errorPanel').classList.remove('hidden');
+  };
+  window.clearError = () => $('errorPanel').classList.add('hidden');
 
-    const open = ui.expanded === c.hash;
-    const head = h(
-      'button',
-      {
-        type: 'button',
-        class: 'chead',
-        'aria-expanded': open ? 'true' : 'false',
-        title: 'Clique para ver os arquivos alterados',
-        onclick: () => toggleCommit(c.hash),
-      },
-      h('div', { class: 'subject', text: c.subject }),
-      h('div', { class: 'meta', text: c.short + ' · ' + c.author + ' · ' + c.date }),
-      refs.children.length ? refs : null
-    );
-
-    const body = h('div', { class: 'cbody' }, head);
-    if (open) body.append(detailsPanel(c));
-    return h('li', { class: 'commit' + (open ? ' open' : '') + (c.incoming ? ' incoming' : '') + (c.head ? ' isHead' : '') }, graphCell(row, lanes, c), body);
-  }
-
-  function detailsPanel(c) {
-    const d = detailsCache[c.hash];
-    const box = h('div', { class: 'cdetails' });
-    if (!d) {
-      box.append(h('div', { class: 'muted', text: 'Carregando...' }));
-      return box;
-    }
-    if (advanced()) box.append(h('div', { class: 'mono muted', text: 'git show ' + c.short + '   (' + c.hash + ')' }));
-    if (d.body) box.append(h('p', { class: 'cmsg', text: d.body }));
-    const n = d.files.length;
-    box.append(
-      h(
-        'div',
-        { class: 'cstats' },
-        h('span', { text: n + ' ' + plural(n, 'arquivo alterado', 'arquivos alterados') }),
-        h('span', { class: 'plus', text: '+' + d.insertions }),
-        h('span', { class: 'minus', text: '−' + d.deletions })
-      )
-    );
-    if (c.merge) box.append(h('div', { class: 'muted', text: 'Commit de junção: mostrando as mudanças em relação à primeira branch.' }));
-    const list = h('div', { class: 'cfiles' });
-    const letters = T().statusLetters;
-    for (const f of d.files) {
-      const cls = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'renamed', T: 'modified' }[f.status] || 'modified';
-      list.append(
-        h(
-          'button',
-          { type: 'button', class: 'cfile', title: f.oldPath ? f.oldPath + ' → ' + f.path : f.path, onclick: () => post('openCommitDiff', { hash: c.hash, path: f.path }) },
-          h('span', { class: 'kind ' + cls, text: letters[f.status] || f.status }),
-          h('span', { class: 'base', text: basenameOf(f.path) }),
-          h('span', { class: 'dir', text: f.oldPath ? basenameOf(f.oldPath) + ' → ' : dirOf(f.path) })
-        )
-      );
-    }
-    if (!n) list.append(h('div', { class: 'muted', text: 'Este commit não alterou arquivos.' }));
-    box.append(list);
-    return box;
-  }
-
-  function toggleCommit(hash) {
-    ui.expanded = ui.expanded === hash ? '' : hash;
-    save();
-    if (ui.expanded && !detailsCache[hash]) post('commitDetails', { hash });
-    renderHistory();
-  }
-
-  function renderHistory() {
-    const body = $('historyBody');
-    body.replaceChildren();
-    $('historyBadge').replaceChildren();
-
-    if (!state.history.length) {
-      body.append(h('div', { class: 'empty' }, icon('history'), h('span', { text: 'Ainda não há commits. Salve o primeiro acima!' })));
-      return;
-    }
-
-    if (state.canUndoCommit) {
-      body.append(btn(T().undo, { icon: 'undo', small: true, mono: advanced(), title: T().undoTip, onclick: () => post('undoCommit') }));
-    }
-    body.append(h('p', { class: 'hint', text: 'Cada linha colorida é uma branch. Clique em um commit para ver o que mudou.' }));
-
-    const { rows, lanes } = Graph.layoutGraph(state.history);
-    const ul = h('ul', { class: 'timeline' });
-    state.history.forEach((c, i) => ul.append(commitRow(c, rows[i], lanes)));
-    body.append(ul);
-
-    // Se a lista de commits mudou e o aberto não existe mais, fecha.
-    if (ui.expanded && !state.history.some((c) => c.hash === ui.expanded)) {
-      ui.expanded = '';
-      save();
-    }
-    if (ui.expanded && !detailsCache[ui.expanded]) post('commitDetails', { hash: ui.expanded });
-  }
-
-  // ---------- Mensagens da extensão ----------
-  window.addEventListener('message', (ev) => {
-    const m = ev.data;
+  window.addEventListener('message', (e) => {
+    const m = e.data;
     if (m.type === 'state') {
       state = m.state;
       render();
-    } else if (m.type === 'config') {
-      CFG = { ...CFG, ...m.cfg };
-      MAXLEN = typeof CFG.maxLen === 'number' ? CFG.maxLen : 72;
-      applyDefaultAction();
-      if (state && state.isRepo) renderCommit();
-      if (ui.settings) renderSettings();
-    } else if (m.type === 'busy') {
-      $('busy').classList.toggle('hidden', !m.on);
-      $('busyText').textContent = m.label || '';
-      announce(m.on ? m.label : '');
-    } else if (m.type === 'committed') {
-      ui.message = '';
-      ui.details = '';
-      $('msgInput').value = '';
-      $('detailsInput').value = '';
-      announce('Commit salvo ✔');
-      save();
-    } else if (m.type === 'commitDetails') {
-      const keys = Object.keys(detailsCache);
-      if (keys.length > 80) delete detailsCache[keys[0]];
-      detailsCache[m.details.hash] = m.details;
-      if (state && state.isRepo) renderHistory();
-    } else if (m.type === 'openGuide') {
-      ui.guide = true;
-      render();
+    } else if (m.type === 'details') {
+      detailsCache[m.id] = m.details;
+      if (m.id === ui.expanded) renderCommit();
+    } else if (m.type === 'error') {
+      $('errorMsg').textContent = m.message;
+      $('errorPanel').classList.remove('hidden');
+    } else if (m.type === 'clearError') {
+      $('errorPanel').classList.add('hidden');
     }
   });
 
+  // ---------- Inicialização ----------
   initStatic();
-  applySettingsView();
-  vscode.postMessage({ type: 'ready' });
+  save();
+  post('init');
 })();

@@ -154,6 +154,19 @@ export interface SyncInfo {
   behind: number;
 }
 
+export interface StashInfo {
+  id: string;
+  hash: string;
+  subject: string;
+}
+
+export interface ReflogInfo {
+  hash: string;
+  short: string;
+  subject: string;
+  date: string;
+}
+
 export interface RepoState extends SyncInfo {
   isRepo: true;
   root: string;
@@ -164,6 +177,8 @@ export interface RepoState extends SyncInfo {
   operation: Operation;
   files: FileEntry[];
   conflicts: string[];
+  stashes: StashInfo[];
+  reflog: ReflogInfo[];
   branches: { local: string[]; remote: string[] };
   history: CommitInfo[];
   headHash: string;
@@ -397,13 +412,15 @@ export async function readCommitDetails(root: string, hash: string): Promise<Com
 }
 
 export async function readState(root: string): Promise<RepoState> {
-  const [sync, statusRaw, remoteList, branches, operation, hasCommits] = await Promise.all([
+  const [sync, statusRaw, remoteList, branches, operation, hasCommits, stashes, reflog] = await Promise.all([
     getSync(root),
     git(root, ['status', '--porcelain=v1', '-z', '-uall'], { raw: true }),
     git(root, ['remote']),
     listBranches(root),
     currentOperation(root),
     gitOk(root, ['rev-parse', '--verify', '-q', 'HEAD']),
+    readStashes(root),
+    readReflog(root),
   ]);
 
   const files = parseStatus(statusRaw);
@@ -426,9 +443,51 @@ export async function readState(root: string): Promise<RepoState> {
     operation,
     files: files.filter((f) => !f.conflict),
     conflicts: files.filter((f) => f.conflict).map((f) => f.path),
+    stashes,
+    reflog,
     branches,
     history,
     headHash,
     canUndoCommit: hasCommits && !!sync.upstream && sync.ahead > 0 && operation === 'none',
   };
+}
+
+export async function readStashes(root: string): Promise<StashInfo[]> {
+  try {
+    const out = await git(root, ['stash', 'list', '--format=%gd%x1f%H%x1f%gs'], { raw: true });
+    return out
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .filter(Boolean)
+      .map((line) => {
+        const [id, hash, subject] = line.split('\x1f');
+        return { id: id || '', hash: hash || '', subject: subject || '' };
+      });
+  } catch {
+    return [];
+  }
+}
+
+export async function readReflog(root: string): Promise<ReflogInfo[]> {
+  try {
+    const out = await git(root, ['reflog', 'show', '--all', '-n', '30', '--format=%H%x1f%h%x1f%gs%x1f%ar'], { raw: true });
+    const seen = new Set<string>();
+    return out
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [hash, short, subject, date] = line.split('\x1f');
+        return { hash: hash || '', short: short || '', subject: subject || '', date: date || '' };
+      })
+      .filter((entry) => /^[0-9a-f]{7,40}$/i.test(entry.hash))
+      .filter((entry) => {
+        if (seen.has(entry.hash)) {
+          return false;
+        }
+        seen.add(entry.hash);
+        return true;
+      });
+  } catch {
+    return [];
+  }
 }

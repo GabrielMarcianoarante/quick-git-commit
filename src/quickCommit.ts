@@ -123,6 +123,45 @@ async function askMessage(type: string): Promise<string | undefined> {
   });
 }
 
+async function askScope(cwd: string): Promise<string | undefined> {
+  const suggestions = new Set<string>();
+  try {
+    const status = await git(cwd, ['status', '--porcelain=v1', '-z', '-uall'], { raw: true });
+    for (const entry of status.split('\0').filter(Boolean)) {
+      const file = entry.slice(3);
+      const parts = file.split('/');
+      if (parts.length > 1) suggestions.add(parts[0]);
+      if (parts.length > 2) suggestions.add(parts.slice(0, 2).join('/'));
+    }
+  } catch { /* sem sugestões */ }
+  try {
+    const log = await git(cwd, ['log', '-n', '30', '--format=%s']);
+    for (const subject of log.split('\n')) {
+      const match = /^[^:(]+\(([\w.-]+(?:\/[\w.-]+)?)\)/.exec(subject);
+      if (match) suggestions.add(match[1]);
+    }
+  } catch { /* sem sugestões */ }
+
+  const items = [
+    { label: 'Sem escopo', description: 'Commit simples, sem feat(login)', id: '' },
+    ...[...suggestions].sort().map((scope) => ({ label: scope, description: 'Usar escopo neste commit', id: scope })),
+    { label: 'Digite outro escopo...', description: 'Informe um escopo personalizado', id: '__other__' },
+  ];
+  const picked = await ui.pick(items, { placeHolder: 'Escolha um escopo', title: stepTitle(3, 'Escopo') });
+  if (!picked || picked.id === '') return '';
+  if (picked.id !== '__other__') return picked.id;
+
+  const scope = await ui.input({
+    prompt: 'Escopo do commit',
+    placeHolder: 'ex.: login, api, painel/perfil',
+    validateInput: (value) => {
+      const v = value.trim();
+      return !v || /^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.-]*)*$/.test(v) ? undefined : 'Use um escopo curto, como login ou painel/perfil.';
+    },
+  });
+  return scope?.trim() || '';
+}
+
 async function chooseFinalAction(): Promise<'commit' | 'push' | undefined> {
   const preset = getConfig().defaultAction;
   if (preset !== 'ask') {
@@ -179,6 +218,11 @@ export async function runQuickCommit(onDone?: () => void): Promise<void> {
       return;
     }
 
+    const scope = await askScope(cwd);
+    if (scope === undefined) {
+      return;
+    }
+
     const message = await askMessage(type);
     if (!message) {
       return;
@@ -201,7 +245,8 @@ export async function runQuickCommit(onDone?: () => void): Promise<void> {
           await git(cwd, ['add', '-A']);
         }
 
-        await git(cwd, ['commit', '-m', `${type}: ${message.trim()}`]);
+        const subject = `${type}${scope ? `(${scope})` : ''}: ${message.trim()}`;
+        await git(cwd, ['commit', '-m', subject]);
 
         if (action === 'push') {
           await pushCurrentBranch(cwd);
@@ -211,8 +256,8 @@ export async function runQuickCommit(onDone?: () => void): Promise<void> {
 
     ui.info(
       action === 'push'
-        ? `Commit realizado e enviado: ${type}: ${message.trim()}`
-        : `Commit realizado: ${type}: ${message.trim()}`
+        ? `Commit realizado e enviado: ${type}${scope ? `(${scope})` : ''}: ${message.trim()}`
+        : `Commit realizado: ${type}${scope ? `(${scope})` : ''}: ${message.trim()}`
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
