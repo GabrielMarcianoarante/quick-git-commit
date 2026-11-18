@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.3
+
+- Novo: **Stashes** no painel, para guardar alterações temporariamente (inclui arquivos novos) e recuperar, copiar de volta ou excluir depois.
+- Novo: **Recuperação** (reflog) para criar uma branch segura em qualquer ponto perdido do histórico, sem alterar a branch atual.
+- Novo: **Editar último commit** (amend), para corrigir a mensagem e/ou incluir arquivos marcados.
+- Novo: **escopo opcional** no commit, como `feat(login): ...`, no painel e no Quick Commit, com sugestões automáticas.
+- Novo: **conflitos com comparação**: abrir "suas mudanças" ↔ "mudanças da outra versão" e escolher uma delas com um clique. Os lados são tratados corretamente também durante um rebase.
+- Corrigido: o histórico não aparecia no painel.
+- Corrigido: o botão **Editar último commit** aparecia só para commits ainda não enviados. Agora fica disponível sempre que há um commit (ele avisa antes se o commit já foi enviado).
+- Corrigido: commits internos do stash não poluem mais o gráfico de histórico.
+- Corrigido: o botão **Resolvido** voltou a marcar o arquivo como resolvido.
+- Corrigido: confirmação ao cancelar uma atualização e mensagens de erro ao criar o repositório no GitHub.
+
 ## 0.4.2
 
 - Novo: releases no GitHub com a extensão (`.vsix`) para baixar separadamente, soma de verificação (`SHA256SUMS.txt`) e texto de lançamento com instruções de instalação, gerados automaticamente a partir deste changelog.

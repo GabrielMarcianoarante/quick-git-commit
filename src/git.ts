@@ -354,7 +354,7 @@ async function hashSet(root: string, range: string[]): Promise<Set<string>> {
 export async function readHistory(root: string, limit: number, remotes: Set<string>, hasUpstream: boolean): Promise<{ history: CommitInfo[]; headHash: string }> {
   let out: string;
   try {
-    out = await git(root, ['log', '--all', '--topo-order', '-n', String(limit), `--pretty=format:${LOG_FORMAT}`], { raw: true });
+    out = await git(root, ['log', '--exclude=refs/stash', '--all', '--topo-order', '-n', String(limit), `--pretty=format:${LOG_FORMAT}`], { raw: true });
   } catch {
     return { history: [], headHash: '' };
   }
@@ -470,7 +470,11 @@ export async function readStashes(root: string): Promise<StashInfo[]> {
 
 export async function readReflog(root: string): Promise<ReflogInfo[]> {
   try {
+<<<<<<< HEAD
     const out = await git(root, ['reflog', 'show', '--all', '-n', '30', '--format=%H%x1f%h%x1f%gs%x1f%ar'], { raw: true });
+=======
+    const out = await git(root, ['reflog', 'show', 'HEAD', '-n', '30', '--format=%H%x1f%h%x1f%gs%x1f%ar'], { raw: true });
+>>>>>>> b05e4f2 (feat: Uptade)
     const seen = new Set<string>();
     return out
       .split('\n')

@@ -1034,6 +1034,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       return;
     }
 
+<<<<<<< HEAD
     if (choice === 'mine') {
       await git(root, ['checkout', '--ours', '--', file]).catch(async () => {
         await git(root, ['rm', '--', file]);
@@ -1076,6 +1077,45 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     if (!fs.existsSync(abs)) {
       return;
     }
+=======
+    if (choice === 'manual') {
+      await vscode.window.showTextDocument(vscode.Uri.file(path.join(root, file)));
+      return;
+    }
+
+    if (choice === 'mine' || choice === 'theirs') {
+      // No rebase o Git troca os lados: "ours" é a base que está recebendo e "theirs" são os seus commits.
+      const rebase = state.operation === 'rebase';
+      const side = (choice === 'mine') === !rebase ? '--ours' : '--theirs';
+      await git(root, ['checkout', side, '--', file]).catch(async () => {
+        await git(root, ['rm', '--', file]);
+      });
+      await git(root, ['add', '--', file]).catch(() => undefined);
+      this.toast(choice === 'mine' ? `Mantidas as suas mudanças em \"${file}\" ✔` : `Mantidas as mudanças da outra versão em \"${file}\" ✔`);
+      return;
+    }
+
+    await git(root, ['add', '--', file]);
+>>>>>>> b05e4f2 (feat: Uptade)
+  }
+
+  private async openConflictDiff(root: string, file: string): Promise<void> {
+    const state = await readState(root);
+    if (!state.conflicts.includes(file)) {
+      return;
+    }
+    const mk = (ref: 'ours' | 'theirs'): vscode.Uri =>
+      vscode.Uri.from({ scheme: DIFF_SCHEME, path: '/' + file, query: JSON.stringify({ root, ref, file }) });
+
+    const rebase = state.operation === 'rebase';
+    const mine = mk(rebase ? 'theirs' : 'ours');
+    const other = mk(rebase ? 'ours' : 'theirs');
+    await vscode.commands.executeCommand(
+      'vscode.diff',
+      mine,
+      other,
+      `${path.basename(file)} — suas mudanças ↔ mudanças da outra versão`
+    );
   }
 
   private async doContinue(root: string): Promise<void> {

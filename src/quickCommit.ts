@@ -18,7 +18,7 @@ function stepTitle(n: number, name: string): string {
   const c = getConfig();
   const skipped = (c.askBranch ? 0 : 1) + (c.defaultAction === 'ask' ? 0 : 1);
   const offset = c.askBranch ? 0 : 1;
-  return `Quick Commit (${n - offset}/${4 - skipped}): ${tr(name)}`;
+  return `Quick Commit (${n - offset}/${5 - skipped}): ${tr(name)}`;
 }
 
 async function pickWorkspaceFolder(): Promise<string | undefined> {
@@ -111,7 +111,7 @@ async function askMessage(type: string): Promise<string | undefined> {
   return ui.input({
     prompt: `Mensagem do commit (será gravado como "${type}: ...")`,
     placeHolder: 'descreva a mudança',
-    title: stepTitle(3, 'Mensagem'),
+    title: stepTitle(4, 'Mensagem'),
     validateInput: (value) => {
       const v = value.trim();
       const max = getConfig().maxLen;
@@ -172,7 +172,7 @@ async function chooseFinalAction(): Promise<'commit' | 'push' | undefined> {
       { label: '$(check) Commit', description: 'Apenas salvar localmente', id: 'commit' as const },
       { label: '$(cloud-upload) Commit & Push', description: 'Salvar e enviar ao remoto', id: 'push' as const },
     ],
-    { placeHolder: 'O que deseja fazer?', title: stepTitle(4, 'Ação') }
+    { placeHolder: 'O que deseja fazer?', title: stepTitle(5, 'Ação') }
   );
   return picked?.id;
 }

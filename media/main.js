@@ -920,8 +920,211 @@
   };
   window.clearError = () => $('errorPanel').classList.add('hidden');
 
+<<<<<<< HEAD
   window.addEventListener('message', (e) => {
     const m = e.data;
+=======
+    const open = ui.expanded === c.hash;
+    const head = h(
+      'button',
+      {
+        type: 'button',
+        class: 'chead',
+        'aria-expanded': open ? 'true' : 'false',
+        title: 'Clique para ver os arquivos alterados',
+        onclick: () => toggleCommit(c.hash),
+      },
+      h('div', { class: 'subject', text: c.subject }),
+      h('div', { class: 'meta', text: c.short + ' · ' + c.author + ' · ' + c.date }),
+      refs.children.length ? refs : null
+    );
+
+    const body = h('div', { class: 'cbody' }, head);
+    if (open) body.append(detailsPanel(c));
+    return h('li', { class: 'commit' + (open ? ' open' : '') + (c.incoming ? ' incoming' : '') + (c.head ? ' isHead' : '') }, graphCell(row, lanes, c), body);
+  }
+
+  function detailsPanel(c) {
+    const d = detailsCache[c.hash];
+    const box = h('div', { class: 'cdetails' });
+    if (!d) {
+      box.append(h('div', { class: 'muted', text: 'Carregando...' }));
+      return box;
+    }
+    if (advanced()) box.append(h('div', { class: 'mono muted', text: 'git show ' + c.short + '   (' + c.hash + ')' }));
+    if (d.body) box.append(h('p', { class: 'cmsg', text: d.body }));
+    const n = d.files.length;
+    box.append(
+      h(
+        'div',
+        { class: 'cstats' },
+        h('span', { text: n + ' ' + plural(n, 'arquivo alterado', 'arquivos alterados') }),
+        h('span', { class: 'plus', text: '+' + d.insertions }),
+        h('span', { class: 'minus', text: '−' + d.deletions })
+      )
+    );
+    if (c.merge) box.append(h('div', { class: 'muted', text: 'Commit de junção: mostrando as mudanças em relação à primeira branch.' }));
+    const list = h('div', { class: 'cfiles' });
+    const letters = T().statusLetters;
+    for (const f of d.files) {
+      const cls = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'renamed', T: 'modified' }[f.status] || 'modified';
+      list.append(
+        h(
+          'button',
+          { type: 'button', class: 'cfile', title: f.oldPath ? f.oldPath + ' → ' + f.path : f.path, onclick: () => post('openCommitDiff', { hash: c.hash, path: f.path }) },
+          h('span', { class: 'kind ' + cls, text: letters[f.status] || f.status }),
+          h('span', { class: 'base', text: basenameOf(f.path) }),
+          h('span', { class: 'dir', text: f.oldPath ? basenameOf(f.oldPath) + ' → ' : dirOf(f.path) })
+        )
+      );
+    }
+    if (!n) list.append(h('div', { class: 'muted', text: 'Este commit não alterou arquivos.' }));
+    box.append(list);
+    return box;
+  }
+
+  function toggleCommit(hash) {
+    ui.expanded = ui.expanded === hash ? '' : hash;
+    save();
+    if (ui.expanded && !detailsCache[hash]) post('commitDetails', { hash });
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const body = $('historyBody');
+    body.replaceChildren();
+    $('historyBadge').replaceChildren();
+
+    if (!state.history.length) {
+      body.append(h('div', { class: 'empty' }, icon('history'), h('span', { text: 'Ainda não há commits. Salve o primeiro acima!' })));
+      return;
+    }
+
+    const canAmend = state.hasCommits && state.operation === 'none';
+    if (state.canUndoCommit || canAmend) {
+      const actions = h('div', { class: 'row' });
+      if (state.canUndoCommit) {
+        actions.append(btn(T().undo, { icon: 'undo', small: true, mono: advanced(), title: T().undoTip, onclick: () => post('undoCommit') }));
+      }
+      if (canAmend) {
+        actions.append(btn(T().amend, { icon: 'commit', small: true, mono: advanced(), title: T().amendTip, onclick: () => post('amendCommit') }));
+      }
+      body.append(actions);
+    }
+    body.append(h('p', { class: 'hint', text: 'Cada linha colorida é uma branch. Clique em um commit para ver o que mudou.' }));
+
+    const { rows, lanes } = Graph.layoutGraph(state.history);
+    const ul = h('ul', { class: 'timeline' });
+    state.history.forEach((c, i) => ul.append(commitRow(c, rows[i], lanes)));
+    body.append(ul);
+
+    // Se a lista de commits mudou e o aberto não existe mais, fecha.
+    if (ui.expanded && !state.history.some((c) => c.hash === ui.expanded)) {
+      ui.expanded = '';
+      save();
+    }
+    if (ui.expanded && !detailsCache[ui.expanded]) post('commitDetails', { hash: ui.expanded });
+  }
+
+  // ---------- Stashes (alterações guardadas) ----------
+  function stashName(subject) {
+    return (subject || '').replace(/^(WIP )?[Oo]n [^:]+:\s*/, '').replace(/^WIP on [^:]+:\s*/, '') || 'Alterações guardadas';
+  }
+
+  function renderStashes() {
+    const list = $('stashesList');
+    const saveBtn = $('btnStashSave');
+    if (!list || !saveBtn) return;
+    const stashes = state.stashes || [];
+
+    saveBtn.replaceChildren(icon('folder'), h('span', { text: advanced() ? 'git stash push -u' : 'Guardar alterações' }));
+    saveBtn.disabled = !state.files.length || state.operation !== 'none';
+    saveBtn.title = 'Guarda as alterações atuais para você continuar depois, deixando a pasta limpa.';
+
+    const badge = $('stashesBadge');
+    badge.replaceChildren();
+    if (stashes.length) badge.append(h('span', { class: 'tag soft', text: String(stashes.length) }));
+
+    list.replaceChildren();
+    if (!stashes.length) {
+      list.append(h('div', { class: 'empty' }, icon('folder'), h('span', { text: 'Nenhuma alteração guardada.' })));
+      return;
+    }
+    for (const s of stashes) {
+      list.append(
+        h(
+          'div',
+          { class: 'stash' },
+          h(
+            'div',
+            { class: 'stashInfo' },
+            h('span', { class: 'stashName', text: stashName(s.subject), title: s.subject }),
+            h('span', { class: 'stashMeta', text: advanced() ? s.id + '  ' + (s.hash || '').slice(0, 7) : 'Guardado ' + s.id.replace('stash@', '#') })
+          ),
+          h(
+            'span',
+            { class: 'fileActions' },
+            btn(advanced() ? 'git stash pop' : 'Recuperar', { icon: 'undo', small: true, kind: 'primary', mono: advanced(), title: 'Traz as alterações de volta e remove este item da lista.', onclick: () => post('stashPop', { stash: s.id }) }),
+            btn(advanced() ? 'git stash apply' : 'Copiar de volta', { icon: 'download', small: true, mono: advanced(), title: 'Traz as alterações de volta e mantém este item na lista.', onclick: () => post('stashApply', { stash: s.id }) }),
+            h('button', { type: 'button', class: 'iconBtn danger', title: advanced() ? 'git stash drop' : 'Excluir', 'aria-label': 'Excluir ' + stashName(s.subject), onclick: () => post('stashDrop', { stash: s.id }) }, icon('x'))
+          )
+        )
+      );
+    }
+  }
+
+  // ---------- Recuperação (reflog) ----------
+  function reflogKind(subject) {
+    const s = (subject || '').toLowerCase();
+    if (s.startsWith('commit (amend)')) return 'Commit editado';
+    if (s.startsWith('commit (merge)')) return 'Junção';
+    if (s.startsWith('commit')) return 'Commit';
+    if (s.startsWith('reset')) return 'Voltou no tempo';
+    if (s.startsWith('checkout')) return 'Troca de branch';
+    if (s.startsWith('rebase')) return 'Rebase';
+    if (s.startsWith('merge')) return 'Merge';
+    if (s.startsWith('pull')) return 'Atualização';
+    if (s.startsWith('cherry-pick')) return 'Cherry-pick';
+    if (s.startsWith('revert')) return 'Reversão';
+    return 'Movimento';
+  }
+
+  function renderReflog() {
+    const list = $('recoveryList');
+    if (!list) return;
+    const head = (state.history || []).find((c) => c.head);
+    const entries = (state.reflog || []).filter((r) => !head || r.hash !== head.hash).slice(0, 15);
+
+    const badge = $('recoveryBadge');
+    badge.replaceChildren();
+    list.replaceChildren();
+    if (!entries.length) {
+      list.append(h('div', { class: 'empty' }, icon('history'), h('span', { text: 'Nada para recuperar por enquanto.' })));
+      return;
+    }
+    for (const r of entries) {
+      const detail = (r.subject || '').replace(/^[^:]+:\s*/, '') || r.subject;
+      list.append(
+        h(
+          'div',
+          { class: 'recoveryItem' },
+          h(
+            'div',
+            { class: 'recoveryInfo' },
+            h('span', { class: 'recoveryTitle' }, h('span', { class: 'recoveryKind', text: reflogKind(r.subject) }), h('span', { class: 'mono', text: r.short })),
+            h('span', { class: 'recoverySubject', text: advanced() ? r.subject : detail, title: r.subject }),
+            h('span', { class: 'recoveryMeta', text: r.date })
+          ),
+          btn(advanced() ? 'git branch recovery-' + r.short : 'Criar branch', { icon: 'branch', small: true, mono: advanced(), title: 'Cria uma branch nova neste ponto. Não altera a sua branch atual.', onclick: () => post('reflogRecover', { hash: r.hash }) })
+        )
+      );
+    }
+  }
+
+  // ---------- Mensagens da extensão ----------
+  window.addEventListener('message', (ev) => {
+    const m = ev.data;
+>>>>>>> b05e4f2 (feat: Uptade)
     if (m.type === 'state') {
       state = m.state;
       render();

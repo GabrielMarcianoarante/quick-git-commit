@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/GabrielMarcianoarante/quick-git-commit/releases"><img src="https://img.shields.io/badge/vers%C3%A3o-0.4.2-2563eb?style=flat-square" alt="Versão"></a>
+  <a href="https://github.com/GabrielMarcianoarante/quick-git-commit/releases"><img src="https://img.shields.io/badge/vers%C3%A3o-0.4.3-2563eb?style=flat-square" alt="Versão"></a>
   <img src="https://img.shields.io/badge/VS%20Code-%5E1.85-0891b2?style=flat-square&logo=visualstudiocode&logoColor=white" alt="VS Code">
   <img src="https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
   <a href="LICENSE"><img src="https://img.shields.io/badge/licen%C3%A7a-PolyForm%20Noncommercial-16a34a?style=flat-square" alt="Licença PolyForm Noncommercial"></a>
@@ -74,15 +74,42 @@ Ao abrir o painel pela primeira vez, o guia leva você por cinco passos: Git ins
 | **Modo Simples e Avançado** | Alterne no topo do painel entre nomes amigáveis e os comandos Git reais (`git fetch`, `git pull`, `git rebase`...). Boa forma de aprender Git usando. |
 | **Guia inicial** | Na primeira execução, um passo a passo verifica o Git, configura nome e e-mail, cria o repositório, entra no GitHub e cria ou conecta o repositório online. |
 | **Desfazer último commit** | Desfaz o commit mais recente (ainda não enviado) mantendo as suas alterações nos arquivos. |
+| **Editar último commit** | Corrige a mensagem ou inclui um arquivo esquecido no commit mais recente. |
+| **Stashes** | Guarda alterações temporariamente e permite recuperá-las depois, com nome para facilitar. |
+| **Recuperação** | Lista os últimos movimentos do HEAD (reflog) e cria uma branch segura em qualquer ponto perdido. |
+| **Escopo no commit** | Campo opcional para commits como `feat(login): ...`, com sugestões automáticas. |
 | **Branches** | Trocar de branch e criar uma nova direto no topo do painel. |
 
 ### Resolução de conflitos guiada
 
-Quando um rebase ou merge encontra conflitos, o painel lista os arquivos afetados e conduz o processo: `Abrir`, `Resolvido`, `Continuar` e `Cancelar tudo`. Cancelar sempre devolve a branch ao estado anterior, sem perder trabalho.
+Quando um rebase ou merge encontra conflitos, o painel lista os arquivos afetados e conduz o processo. Para cada arquivo você escolhe:
+
+- **Comparar:** abre lado a lado "suas mudanças" e "mudanças da outra versão".
+- **Minhas:** mantém a sua versão do arquivo.
+- **Da outra versão:** mantém a versão que está entrando.
+- **Editar:** abre o arquivo para combinar as duas manualmente. Depois use **Resolvido**.
+
+Quando não houver mais conflitos, use `Continuar`. `Cancelar tudo` sempre devolve a branch ao estado anterior, sem perder trabalho. A extensão já considera que o Git troca os lados durante um rebase, então "Minhas" sempre significa os seus commits.
 
 <p align="center">
   <img src="docs/images/panel-conflict.png" alt="Painel mostrando uma atualização pausada por conflitos" width="320">
 </p>
+
+### Stashes: guardar e recuperar alterações
+
+Precisa trocar de assunto no meio de uma tarefa? **Guardar alterações** coloca tudo de lado (inclusive arquivos novos) e deixa a pasta limpa. Cada item guardado pode ser **Recuperado** (volta e sai da lista), **Copiado de volta** (volta e continua na lista) ou excluído.
+
+### Recuperação de itens perdidos
+
+Fez um reset sem querer ou perdeu um commit depois de trocar de branch? A seção **Recuperação** lista os últimos movimentos do seu HEAD (reflog). Um clique em **Criar branch** cria uma branch segura naquele ponto, sem alterar a branch em que você está.
+
+### Editar o último commit
+
+Esqueceu um arquivo ou errou a mensagem? **Editar último commit** corrige a mensagem, inclui os arquivos marcados ou os dois. Se o commit já foi enviado, a extensão avisa antes, porque o histórico remoto precisará ser substituído.
+
+### Escopo no commit
+
+O escopo é opcional e deixa o commit mais organizado, como `feat(login): adiciona recuperação de senha`. O painel e o Quick Commit sugerem escopos a partir das pastas alteradas e dos commits recentes.
 
 ### Commit rápido pela barra de status
 
@@ -90,8 +117,9 @@ O botão **Quick Commit** na barra inferior abre um fluxo guiado por menus, idea
 
 1. Escolha a branch: manter a atual, trocar para outra ou criar uma nova.
 2. Selecione o prefixo do commit.
-3. Digite a mensagem.
-4. Escolha entre **Commit** e **Commit & Push**.
+3. Escolha o escopo (opcional).
+4. Digite a mensagem.
+5. Escolha entre **Commit** e **Commit & Push**.
 
 ### Prefixos (Conventional Commits)
 
@@ -110,6 +138,7 @@ O botão **Quick Commit** na barra inferior abre um fluxo guiado por menus, idea
 - O envio forçado usa `--force-with-lease`, que evita sobrescrever trabalho que você ainda não viu.
 - O painel **nunca fica esperando senha no terminal**. Se faltar login, ele avisa o que fazer.
 - Erros do Git são traduzidos para mensagens claras. Os detalhes técnicos ficam em **Ver > Saída > Quick Git Commit**.
+- Se o GitHub recusar um envio por falta de permissão (por exemplo, ao enviar arquivos em `.github/workflows`), a extensão explica o motivo e oferece **Autorizar e tentar de novo**, sem precisar sair do painel.
 - Os comandos `git` rodam localmente, via `execFile` com lista de argumentos (sem shell). A extensão não envia dados para nenhum serviço próprio. A única consulta de rede automática é a verificação de nova versão, uma requisição anônima à API pública de releases do GitHub (no máximo uma vez por dia), que não envia nenhuma informação sua e pode ser desativada.
 - O login do GitHub usa o sistema de contas do próprio VS Code. O token fica com o VS Code, é entregue ao Git apenas em memória e somente para endereços `github.com`, e nunca é gravado em arquivos nem em logs.
 
@@ -206,12 +235,22 @@ O objetivo é tornar o Quick Git Commit a forma mais fácil de usar Git dentro d
 - [x] Resolução de conflitos guiada
 - [x] Histórico com novidades da nuvem e commits não enviados
 - [x] Desfazer último commit mantendo as alterações
+- [x] Editar o último commit (amend): corrigir a mensagem ou incluir um arquivo esquecido
+- [x] Stash visual: guardar alterações temporariamente e recuperá-las depois
+- [x] Recuperação de commits e branches perdidos (reflog) com um clique
+- [x] Escopo no commit, como `feat(login): ...`, com sugestão de escopos
+- [x] Resolvedor de conflitos visual, comparando "suas mudanças" e "mudanças da outra versão"
 - [x] Trocar e criar branches
 - [x] Guia inicial: Git, nome e e-mail, repositório, login no GitHub e criação do repositório online
 - [x] Modo Simples e Avançado
 - [x] Detalhes do commit: arquivos alterados e diferenças
 - [x] Gráfico de branches com ramificações e junções
 - [x] Aviso de nova versão com link para download
+<<<<<<< HEAD
+=======
+- [x] Releases no GitHub com o `.vsix` para baixar só a extensão
+- [x] Autorização da permissão `workflow` do GitHub direto na extensão, quando o envio exige
+>>>>>>> b05e4f2 (feat: Uptade)
 - [x] Atalhos de teclado e ações no menu de contexto
 - [x] Acessibilidade aprimorada (alto contraste e leitores de tela)
 - [x] Internacionalização: inglês
@@ -223,11 +262,6 @@ O objetivo é tornar o Quick Git Commit a forma mais fácil de usar Git dentro d
 
 **Em seguida: funções essenciais**
 
-- [ ] Stash visual: guardar alterações temporariamente e recuperá-las depois
-- [ ] Recuperação de commits e branches perdidos (reflog) com um clique
-- [ ] Editar o último commit (amend): corrigir a mensagem ou incluir um arquivo esquecido
-- [ ] Escopo no commit, como `feat(login): ...`, com sugestão de escopos
-- [ ] Resolvedor de conflitos visual, comparando "suas mudanças" e "mudanças da nuvem"
 - [ ] Reverter commit (revert) e cherry-pick com explicação simples
 - [ ] Tags e releases: criar e enviar versões como `v1.0.0`
 - [ ] Gerenciar branches: renomear, apagar e limpar as já mescladas
@@ -251,13 +285,22 @@ quick-git-commit/
 │   ├── extension.ts     Ativação, comandos e botão da barra de status
 │   ├── git.ts           Camada Git: execução segura e leitura de estado
 │   ├── panel.ts         Painel lateral (webview) e ações
-│   └── quickCommit.ts   Fluxo rápido de commit por menus
+│   ├── quickCommit.ts   Fluxo rápido de commit por menus
+│   ├── githubScope.ts   Autorização de permissões extras do GitHub (workflow)
+│   ├── updateCheck.ts   Aviso de nova versão pelas releases do GitHub
+│   ├── config.ts        Leitura das configurações da extensão
+│   └── i18n.ts          Idioma (português e inglês)
 ├── media/
 │   ├── graph.js         Cálculo do gráfico de branches (função pura)
 │   ├── main.js          Interface do painel
+│   ├── i18n.js          Traduções da interface do painel
 │   └── main.css         Estilos, baseados nas cores do tema do VS Code
+├── .github/
+│   ├── workflows/       Release automática ao criar uma tag vX.Y.Z
+│   └── scripts/         Geração do texto da release a partir do CHANGELOG
 ├── resources/           Ícones da extensão
 ├── docs/images/         Imagens usadas neste README
+├── CHANGELOG.md         Novidades de cada versão
 └── package.json
 ```
 

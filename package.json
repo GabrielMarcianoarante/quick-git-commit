@@ -2,7 +2,7 @@
   "name": "quick-git-commit",
   "displayName": "Quick Git Commit",
   "description": "%ext.description%",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "publisher": "GabrielMarcianoarante",
   "license": "PolyForm-Noncommercial-1.0.0",
   "engines": {

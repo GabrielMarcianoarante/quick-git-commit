@@ -1,6 +1,9 @@
 name: Release
 
-
+# Para lançar uma versão:
+#   1. aumente "version" no package.json e adicione a seção "## X.Y.Z" no CHANGELOG.md
+#   2. faça commit e envie
+#   3. git tag vX.Y.Z && git push origin vX.Y.Z
 on:
   push:
     tags:
