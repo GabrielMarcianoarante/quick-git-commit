@@ -2,6 +2,10 @@
    Chaves com {} são padrões (cada {} captura um trecho). O português é o idioma-base. */
 (function (root) {
   const P = [
+    ['O GitHub bloqueou o envio porque este commit altera arquivos de automação (.github/workflows) e a sua conta conectada ainda não tem essa permissão. Seus commits continuam salvos. Quer autorizar agora?', 'GitHub blocked the push because this commit changes automation files (.github/workflows) and your connected account does not have that permission yet. Your commits are still saved. Authorize now?'],
+    ['Autorizar e tentar de novo', 'Authorize and try again'],
+    ['Autorização cancelada. Nada foi enviado.', 'Authorization cancelled. Nothing was sent.'],
+    ['O GitHub bloqueou o envio: falta a permissão "workflow" na sua conta conectada. Tente "Enviar" de novo para autorizar.', 'GitHub blocked the push: the "workflow" permission is missing on your connected account. Try "Push" again to authorize.'],
     ['Nova versão do Quick Git Commit disponível: {}. Você está usando a {}.', 'New Quick Git Commit version available: {}. You are using {}.'],
     ['Você já está na versão mais recente ({}).', 'You are on the latest version ({}).'],
     ['Não foi possível verificar atualizações agora.', 'Could not check for updates right now.'],

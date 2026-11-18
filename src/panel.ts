@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { getConfig, settingsPayload } from './config';
 import { currentLang, tr, ui } from './i18n';
+import { isMissingWorkflowScope, resolveMissingWorkflowScope } from './githubScope';
 import {
   git,
   isHash,
@@ -38,6 +39,9 @@ function friendly(raw: string): string {
     m.includes('invalid username or password')
   ) {
     return 'Não consegui entrar na sua conta do repositório online. Faça login (GitHub no VS Code ou Git Credential Manager) e tente de novo.';
+  }
+  if (isMissingWorkflowScope(raw)) {
+    return 'O GitHub bloqueou o envio: falta a permissão "workflow" na sua conta conectada. Tente "Enviar" de novo para autorizar.';
   }
   if (m.includes('could not resolve host') || m.includes('unable to access') || m.includes('network is unreachable')) {
     return 'Não consegui falar com o servidor. Verifique sua internet e tente novamente.';
@@ -458,6 +462,14 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
   private showError(e: unknown): void {
     const raw = e instanceof Error ? e.message : String(e);
     this.output.appendLine(`ERRO: ${raw}`);
+    if (isMissingWorkflowScope(raw)) {
+      // O usuário resolve aqui mesmo: autoriza a permissão e o envio é refeito.
+      void resolveMissingWorkflowScope(
+        () => this.enqueue('Enviando para a nuvem...', (r) => this.doPush(r)),
+        () => this.output.show(true)
+      );
+      return;
+    }
     void ui.error(`Quick Git: ${friendly(raw)}`, 'Ver detalhes').then((pick) => {
       if (pick) {
         this.output.show(true);

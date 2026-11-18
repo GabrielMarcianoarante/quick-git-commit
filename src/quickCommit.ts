@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { git, gitOk, getRepoRoot } from './git';
 import { getConfig } from './config';
 import { tr, ui } from './i18n';
+import { isMissingWorkflowScope, resolveMissingWorkflowScope } from './githubScope';
 
 const KNOWN: Record<string, string> = {
   feat: 'Nova funcionalidade',
@@ -154,8 +155,10 @@ export async function runQuickCommit(onDone?: () => void): Promise<void> {
     return;
   }
 
+  let repoRoot: string | undefined;
   try {
     const cwd = await getRepoRoot(folder);
+    repoRoot = cwd || undefined;
     if (!cwd) {
       ui.error('Quick Git Commit: esta pasta não é um repositório Git.');
       return;
@@ -213,7 +216,15 @@ export async function runQuickCommit(onDone?: () => void): Promise<void> {
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    ui.error(`Quick Git Commit: ${msg}`);
+    if (repoRoot && isMissingWorkflowScope(msg)) {
+      const root = repoRoot;
+      const ok = await resolveMissingWorkflowScope(() => pushCurrentBranch(root));
+      if (ok) {
+        ui.info('Commits enviados para a nuvem ✔');
+      }
+    } else {
+      ui.error(`Quick Git Commit: ${msg}`);
+    }
   } finally {
     onDone?.();
   }

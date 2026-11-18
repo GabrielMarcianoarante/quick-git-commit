@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { setGitAuth, setGitLogger } from './git';
 import { runQuickCommit } from './quickCommit';
 import { tr } from './i18n';
+import { getGithubSessionForGit } from './githubScope';
 import { checkForUpdates, scheduleUpdateCheck } from './updateCheck';
 import { DIFF_SCHEME, GitContentProvider, QuickGitViewProvider } from './panel';
 
@@ -12,7 +13,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Se o usuário entrou no GitHub pelo painel, entrega esse login ao Git (somente para github.com, só em memória).
   setGitAuth(async () => {
     try {
-      const session = await vscode.authentication.getSession('github', ['repo'], { silent: true });
+      const session = await getGithubSessionForGit();
       if (!session) {
         return undefined;
       }
