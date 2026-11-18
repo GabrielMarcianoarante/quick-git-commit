@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2
+
+- Novo: releases no GitHub com a extensão (`.vsix`) para baixar separadamente, soma de verificação (`SHA256SUMS.txt`) e texto de lançamento com instruções de instalação, gerados automaticamente a partir deste changelog.
+- Inclui as mudanças da 0.4.1 (autorização da permissão `workflow` direto na extensão).
+
 ## 0.4.1
 
 - Corrigido: ao enviar commits que alteram `.github/workflows`, o GitHub recusava o envio por falta da permissão `workflow`. Agora a extensão explica o problema e oferece o botão **Autorizar e tentar de novo**, que pede a permissão e refaz o envio sozinho, tanto no painel quanto no Quick Commit da barra de status.
