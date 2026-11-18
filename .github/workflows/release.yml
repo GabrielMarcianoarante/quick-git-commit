@@ -1,7 +1,9 @@
 name: Release
 
-# Para lançar uma versão: aumente "version" no package.json, faça commit e depois:
-#   git tag v0.4.0 && git push origin v0.4.0
+# Para lançar uma versão:
+#   1. aumente "version" no package.json e adicione a seção "## X.Y.Z" no CHANGELOG.md
+#   2. faça commit e envie
+#   3. git tag vX.Y.Z && git push origin vX.Y.Z
 on:
   push:
     tags:
@@ -15,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -31,10 +35,25 @@ jobs:
             exit 1
           fi
 
-      - name: Gerar o .vsix
-        run: npm run package
+      - name: Gerar o .vsix e a soma de verificação
+        run: |
+          npm run package
+          sha256sum ./*.vsix > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Montar o texto da release
+        run: |
+          PREV="$(git tag --sort=-v:refname | grep -v "^${GITHUB_REF_NAME}$" | head -n 1 || true)"
+          .github/scripts/release-notes.sh "${GITHUB_REF_NAME}" "${GITHUB_REPOSITORY}" "${PREV}" > release-notes.md
+          cat release-notes.md
 
       - name: Criar a release no GitHub
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" ./*.vsix --title "${GITHUB_REF_NAME}" --generate-notes
+        run: |
+          FLAGS="--latest"
+          case "${GITHUB_REF_NAME}" in *-*) FLAGS="--prerelease" ;; esac
+          gh release create "${GITHUB_REF_NAME}" ./*.vsix ./SHA256SUMS.txt \
+            --title "Quick Git Commit ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            ${FLAGS}
