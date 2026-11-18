@@ -212,9 +212,6 @@ O objetivo é tornar o Quick Git Commit a forma mais fácil de usar Git dentro d
 - [x] Detalhes do commit: arquivos alterados e diferenças
 - [x] Gráfico de branches com ramificações e junções
 - [x] Aviso de nova versão com link para download
-
-**Disponível na v0.3.0: experiência de uso**
-
 - [x] Atalhos de teclado e ações no menu de contexto
 - [x] Acessibilidade aprimorada (alto contraste e leitores de tela)
 - [x] Internacionalização: inglês
