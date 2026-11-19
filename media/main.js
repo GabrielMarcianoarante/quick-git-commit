@@ -779,7 +779,7 @@
           h('span', { class: 'kind ' + f.kind, text: t.kinds[f.kind] || 'Alterado' }),
           h(
             'button',
-            { type: 'button', class: 'fileName', title: f.path + ' (clique para ver as mudanças)', onclick: () => post(f.kind === 'untracked' ? 'openFile' : 'openDiff', { path: f.path }) },
+            { type: 'button', class: 'fileName', title: f.path + (CFG.lang === 'en' ? ' (click to see the changes)' : ' (clique para ver as mudanças)'), onclick: () => post(f.kind === 'untracked' ? 'openFile' : 'openDiff', { path: f.path }) },
             h('span', { class: 'base', text: basenameOf(f.path) }),
             h('span', { class: 'dir', text: dirOf(f.path) })
           ),
@@ -920,7 +920,7 @@
     for (const r of c.refs) {
       refs.append(h('span', { class: 'ref ' + (r.kind === 'tag' ? 'rtag' : r.kind) + (r.head ? ' head' : ''), text: r.name }));
     }
-    if (c.unpushed) refs.append(h('span', { class: 'tag warn', text: advanced() ? 'ahead' : 'não enviado' }));
+    if (c.unpushed) refs.append(h('span', { class: 'tag warn', text: advanced() ? 'ahead' : CFG.lang === 'en' ? 'not pushed' : 'não enviado' }));
     if (c.incoming) refs.append(h('span', { class: 'tag info', text: advanced() ? 'behind' : 'só na nuvem' }));
 
     const open = ui.expanded === c.hash;
@@ -934,7 +934,7 @@
         onclick: () => toggleCommit(c.hash),
       },
       h('div', { class: 'subject', text: c.subject }),
-      h('div', { class: 'meta', text: c.short + ' · ' + c.author + ' · ' + c.date }),
+      h('div', { class: 'meta', text: c.short + ' · ' + c.author + ' · ' + rel(c.date) }),
       refs.children.length ? refs : null
     );
 
@@ -1025,6 +1025,16 @@
     if (ui.expanded && !detailsCache[ui.expanded]) post('commitDetails', { hash: ui.expanded });
   }
 
+  // Datas relativas do git vêm em inglês ("2 hours ago"); no modo português viram "há 2 horas".
+  function rel(d) {
+    if (CFG.lang === 'en' || !d) return d;
+    const x = /^(\d+) (second|minute|hour|day|week|month|year)s? ago$/.exec(d);
+    if (!x) return d === 'now' ? 'agora' : d;
+    const n = Number(x[1]);
+    const u = { second: ['segundo', 'segundos'], minute: ['minuto', 'minutos'], hour: ['hora', 'horas'], day: ['dia', 'dias'], week: ['semana', 'semanas'], month: ['mês', 'meses'], year: ['ano', 'anos'] }[x[2]];
+    return 'há ' + n + ' ' + (n === 1 ? u[0] : u[1]);
+  }
+
   // ---------- Stashes (alterações guardadas) ----------
   function stashName(subject) {
     return (subject || '').replace(/^(WIP )?[Oo]n [^:]+:\s*/, '').replace(/^WIP on [^:]+:\s*/, '') || 'Alterações guardadas';
@@ -1062,7 +1072,7 @@
           ),
           h(
             'span',
-            { class: 'fileActions' },
+            { class: 'stashActions' },
             btn(advanced() ? 'git stash pop' : 'Recuperar', { icon: 'undo', small: true, kind: 'primary', mono: advanced(), title: 'Traz as alterações de volta e remove este item da lista.', onclick: () => post('stashPop', { stash: s.id }) }),
             btn(advanced() ? 'git stash apply' : 'Copiar de volta', { icon: 'download', small: true, mono: advanced(), title: 'Traz as alterações de volta e mantém este item na lista.', onclick: () => post('stashApply', { stash: s.id }) }),
             h('button', { type: 'button', class: 'iconBtn danger', title: advanced() ? 'git stash drop' : 'Excluir', 'aria-label': 'Excluir ' + stashName(s.subject), onclick: () => post('stashDrop', { stash: s.id }) }, icon('x'))
@@ -1112,7 +1122,7 @@
             { class: 'recoveryInfo' },
             h('span', { class: 'recoveryTitle' }, h('span', { class: 'recoveryKind', text: reflogKind(r.subject) }), h('span', { class: 'mono', text: r.short })),
             h('span', { class: 'recoverySubject', text: advanced() ? r.subject : detail, title: r.subject }),
-            h('span', { class: 'recoveryMeta', text: r.date })
+            h('span', { class: 'recoveryMeta', text: rel(r.date) })
           ),
           btn(advanced() ? 'git branch recovery-' + r.short : 'Criar branch', { icon: 'branch', small: true, mono: advanced(), title: 'Cria uma branch nova neste ponto. Não altera a sua branch atual.', onclick: () => post('reflogRecover', { hash: r.hash }) })
         )
