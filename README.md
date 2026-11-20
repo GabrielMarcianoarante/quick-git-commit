@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/GabrielMarcianoarante/quick-git-commit/releases"><img src="https://img.shields.io/badge/vers%C3%A3o-0.4.3-2563eb?style=flat-square" alt="Versão"></a>
+  <a href="https://github.com/GabrielMarcianoarante/quick-git-commit/releases"><img src="https://img.shields.io/badge/vers%C3%A3o-0.4.4-2563eb?style=flat-square" alt="Versão"></a>
   <img src="https://img.shields.io/badge/VS%20Code-%5E1.85-0891b2?style=flat-square&logo=visualstudiocode&logoColor=white" alt="VS Code">
   <img src="https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
   <a href="LICENSE"><img src="https://img.shields.io/badge/licen%C3%A7a-PolyForm%20Noncommercial-16a34a?style=flat-square" alt="Licença PolyForm Noncommercial"></a>
@@ -75,6 +75,8 @@ Ao abrir o painel pela primeira vez, o guia leva você por cinco passos: Git ins
 | **Guia inicial** | Na primeira execução, um passo a passo verifica o Git, configura nome e e-mail, cria o repositório, entra no GitHub e cria ou conecta o repositório online. |
 | **Desfazer último commit** | Desfaz o commit mais recente (ainda não enviado) mantendo as suas alterações nos arquivos. |
 | **Editar último commit** | Corrige a mensagem ou inclui um arquivo esquecido no commit mais recente. |
+| **Reverter commit** | Ao abrir um commit no histórico, cria um commit novo que desfaz as mudanças dele. Nada é apagado, então é seguro mesmo se já foi enviado. |
+| **Copiar para esta branch** | Cherry-pick: leva só as mudanças de um commit (por exemplo, de outra branch) para a branch atual. |
 | **Stashes** | Guarda alterações temporariamente e permite recuperá-las depois, com nome para facilitar. |
 | **Recuperação** | Lista os últimos movimentos do HEAD (reflog) e cria uma branch segura em qualquer ponto perdido. |
 | **Escopo no commit** | Campo opcional para commits como `feat(login): ...`, com sugestões automáticas. |
@@ -106,6 +108,15 @@ Fez um reset sem querer ou perdeu um commit depois de trocar de branch? A seçã
 ### Editar o último commit
 
 Esqueceu um arquivo ou errou a mensagem? **Editar último commit** corrige a mensagem, inclui os arquivos marcados ou os dois. Se o commit já foi enviado, a extensão avisa antes, porque o histórico remoto precisará ser substituído.
+
+### Reverter e copiar commits
+
+Abra um commit no histórico para ver dois botões, sempre com a explicação do efeito antes de agir:
+
+- **Reverter commit** (`git revert`): cria um commit **novo** que desfaz as mudanças daquele commit. O original continua no histórico, então nada é apagado e é seguro mesmo se ele já foi enviado.
+- **Copiar para esta branch** (`git cherry-pick`): leva só as mudanças de um commit, por exemplo de outra branch, para a branch atual, sem trazer o resto.
+
+Se aparecer conflito, o painel conduz a resolução (`Continuar` e `Cancelar tudo`). Antes de começar, a extensão pede que não haja alterações não salvas (use **Guardar alterações** se precisar).
 
 ### Escopo no commit
 
@@ -236,6 +247,7 @@ O objetivo é tornar o Quick Git Commit a forma mais fácil de usar Git dentro d
 - [x] Histórico com novidades da nuvem e commits não enviados
 - [x] Desfazer último commit mantendo as alterações
 - [x] Editar o último commit (amend): corrigir a mensagem ou incluir um arquivo esquecido
+- [x] Reverter commit (revert) e cherry-pick com explicação simples
 - [x] Stash visual: guardar alterações temporariamente e recuperá-las depois
 - [x] Recuperação de commits e branches perdidos (reflog) com um clique
 - [x] Escopo no commit, como `feat(login): ...`, com sugestão de escopos
@@ -259,7 +271,6 @@ O objetivo é tornar o Quick Git Commit a forma mais fácil de usar Git dentro d
 
 **Em seguida: funções essenciais**
 
-- [ ] Reverter commit (revert) e cherry-pick com explicação simples
 - [ ] Tags e releases: criar e enviar versões como `v1.0.0`
 - [ ] Gerenciar branches: renomear, apagar e limpar as já mescladas
 - [ ] Abrir Pull Request no GitHub e GitLab direto do painel

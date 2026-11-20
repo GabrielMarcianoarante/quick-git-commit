@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.4
+
+- Novo: **Reverter commit (revert)**. Em qualquer commit do histórico, o botão cria um commit novo que desfaz as mudanças dele. Nada é apagado, então é seguro mesmo se o commit já foi enviado para a nuvem. Antes de agir, a extensão explica o efeito em linguagem simples.
+- Novo: **Copiar commit para esta branch (cherry-pick)**. Leva só as mudanças de um commit de outra branch para a branch atual, sem trazer o resto, útil para aproveitar uma correção.
+- Reverter e copiar funcionam com a resolução de conflitos guiada do painel (Continuar e Cancelar tudo), tratam commits de junção (merge) e avisam quando as mudanças já estão na branch, em vez de deixar o Git preso num commit vazio.
+- Corrigido: **bug do idioma**. Ao mudar para o inglês, algumas partes continuavam em português: títulos das telas de comparação de arquivos, etiquetas do histórico ("só na nuvem") e dos arquivos do commit ("Alterado"), mensagens do "Editar último commit", da resolução de conflitos e da criação do repositório, dicas do modo Avançado e o seletor de escopo. Agora tudo é traduzido.
+
 ## 0.4.3
 
 - Novo: **Stashes** no painel, para guardar alterações temporariamente (inclui arquivos novos) e recuperar, copiar de volta ou excluir depois.

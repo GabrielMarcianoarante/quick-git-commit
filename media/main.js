@@ -14,6 +14,8 @@
   // Inglês: traduz o painel; textos do usuário (commits, arquivos, branches) ficam como estão.
   if (window.QGCI18N) window.QGCI18N.start(CFG.lang, '.subject,.fileName,.cmsg,.repoName,.cfile,.refs,.ref,.rtag,#branchSelect option,#baseSelect option,.chipTxt');
   const announce = (t) => { const a = $('announcer'); if (a) a.textContent = t || ''; };
+  // Textos fixos dentro de áreas que o tradutor automático ignora (por terem nomes do usuário) são traduzidos aqui.
+  const tt = (s) => (window.QGCI18N ? window.QGCI18N.translate(s, CFG.lang, false) : s);
 
   // ---------- Ícones (SVG inline, sem dependências) ----------
   const ICONS = {
@@ -121,6 +123,11 @@
       undoTip: 'Desfaz o commit mais recente, mantendo as suas alterações. (git reset --soft HEAD~1)',
       amend: 'Editar último commit',
       amendTip: 'Corrige a mensagem ou inclui um arquivo esquecido no commit mais recente.',
+      revert: 'Reverter commit',
+      revertTip: 'Cria um novo commit que desfaz as mudanças deste commit, sem apagar nada do histórico. (git revert)',
+      cherryPick: 'Copiar para esta branch',
+      cherryPickTip: 'Copia só as mudanças deste commit para a branch atual, sem trazer o resto da outra branch. (git cherry-pick)',
+      commitOpsHint: 'Reverter: cria um commit novo que desfaz este, sem apagar nada. Copiar: leva só as mudanças deste commit para a sua branch atual.',
       publish: 'Publicar na nuvem',
       connect: 'Conectar à nuvem',
       markAll: 'Marcar tudo',
@@ -149,6 +156,11 @@
       undoTip: 'Desfazer último commit, mantendo as alterações no index.',
       amend: 'git commit --amend',
       amendTip: 'Alterar a mensagem ou incluir alterações staged no último commit.',
+      revert: 'git revert',
+      revertTip: 'git revert: cria um commit novo que inverte as mudanças deste commit.',
+      cherryPick: 'git cherry-pick',
+      cherryPickTip: 'git cherry-pick: aplica as mudanças deste commit na branch atual como um novo commit.',
+      commitOpsHint: '',
       publish: 'git push -u origin',
       connect: 'git remote add origin',
       markAll: 'git add -A',
@@ -632,6 +644,8 @@
     const titles = {
       rebase: advanced() ? 'rebase em andamento' : 'Atualização (rebase) pausada',
       merge: advanced() ? 'merge em andamento' : 'Atualização (merge) pausada',
+      revert: advanced() ? 'revert em andamento' : 'Reversão pausada',
+      'cherry-pick': advanced() ? 'cherry-pick em andamento' : 'Cópia de commit pausada',
       none: 'Arquivos em conflito',
     };
     const card = h('div', { class: 'card warn' }, h('div', { class: 'cardTitle' }, icon('alert'), h('span', { text: titles[op] })));
@@ -662,8 +676,8 @@
       card.append(h('p', { text: 'Todos os conflitos foram resolvidos. Clique em "Continuar" para terminar.' }));
     }
     if (op !== 'none') {
-      const cont = op === 'rebase' ? 'git rebase --continue' : 'git commit';
-      const abort = op === 'rebase' ? 'git rebase --abort' : 'git merge --abort';
+      const cont = op === 'rebase' ? 'git rebase --continue' : op === 'merge' ? 'git commit' : 'git ' + op + ' --continue';
+      const abort = 'git ' + op + ' --abort';
       card.append(
         h(
           'div',
@@ -920,8 +934,8 @@
     for (const r of c.refs) {
       refs.append(h('span', { class: 'ref ' + (r.kind === 'tag' ? 'rtag' : r.kind) + (r.head ? ' head' : ''), text: r.name }));
     }
-    if (c.unpushed) refs.append(h('span', { class: 'tag warn', text: advanced() ? 'ahead' : CFG.lang === 'en' ? 'not pushed' : 'não enviado' }));
-    if (c.incoming) refs.append(h('span', { class: 'tag info', text: advanced() ? 'behind' : 'só na nuvem' }));
+    if (c.unpushed) refs.append(h('span', { class: 'tag warn', text: advanced() ? 'ahead' : tt('não enviado') }));
+    if (c.incoming) refs.append(h('span', { class: 'tag info', text: advanced() ? 'behind' : tt('só na nuvem') }));
 
     const open = ui.expanded === c.hash;
     const head = h(
@@ -971,7 +985,7 @@
         h(
           'button',
           { type: 'button', class: 'cfile', title: f.oldPath ? f.oldPath + ' → ' + f.path : f.path, onclick: () => post('openCommitDiff', { hash: c.hash, path: f.path }) },
-          h('span', { class: 'kind ' + cls, text: letters[f.status] || f.status }),
+          h('span', { class: 'kind ' + cls, text: tt(letters[f.status] || f.status) }),
           h('span', { class: 'base', text: basenameOf(f.path) }),
           h('span', { class: 'dir', text: f.oldPath ? basenameOf(f.oldPath) + ' → ' : dirOf(f.path) })
         )
@@ -979,6 +993,16 @@
     }
     if (!n) list.append(h('div', { class: 'muted', text: 'Este commit não alterou arquivos.' }));
     box.append(list);
+
+    // Reverter (desfaz este commit com um commit novo) e copiar (cherry-pick para a branch atual).
+    const free = state.operation === 'none' && !state.detached && state.conflicts.length === 0;
+    const actions = h('div', { class: 'row' });
+    actions.append(
+      btn(T().revert, { icon: 'undo', small: true, mono: advanced(), disabled: !free || c.incoming, title: T().revertTip, onclick: () => post('revertCommit', { hash: c.hash }) }),
+      btn(T().cherryPick, { icon: 'merge', small: true, mono: advanced(), disabled: !free, title: T().cherryPickTip, onclick: () => post('cherryPickCommit', { hash: c.hash }) })
+    );
+    box.append(actions);
+    if (T().commitOpsHint) box.append(h('p', { class: 'hint', text: T().commitOpsHint }));
     return box;
   }
 

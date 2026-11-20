@@ -590,6 +590,12 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       case 'amendCommit':
         void this.enqueue('Editando o último commit...', (r) => this.doAmendCommit(r));
         break;
+      case 'revertCommit':
+        void this.enqueue('Revertendo commit...', (r) => this.doCommitOp(r, 'revert', String(p.hash ?? '')));
+        break;
+      case 'cherryPickCommit':
+        void this.enqueue('Copiando commit...', (r) => this.doCommitOp(r, 'cherry-pick', String(p.hash ?? '')));
+        break;
       case 'commitDetails':
         void this.enqueue(undefined, (r) => this.sendCommitDetails(r, String(p.hash ?? '')));
         break;
@@ -947,11 +953,11 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     if (stagedOnly) {
       left = mk('HEAD');
       right = mk('index');
-      title = `${base} (antes ↔ marcado para o commit)`;
+      title = `${base} ${tr('(antes ↔ marcado para o commit)')}`;
     } else {
       left = mk('index');
       right = fs.existsSync(abs) ? vscode.Uri.file(abs) : mk('none');
-      title = `${base} (antes ↔ agora)`;
+      title = `${base} ${tr('(antes ↔ agora)')}`;
     }
     await vscode.commands.executeCommand('vscode.diff', left, right, title);
   }
@@ -1069,7 +1075,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       'vscode.diff',
       mine,
       other,
-      `${path.basename(file)} — suas mudanças ↔ mudanças da outra versão`
+      `${path.basename(file)} ${tr('— suas mudanças ↔ mudanças da outra versão')}`
     );
   }
 
@@ -1084,10 +1090,18 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
         await git(root, ['rebase', '--continue']);
       } else if (op === 'merge') {
         await git(root, ['commit', '--no-edit']);
+      } else if (op === 'revert' || op === 'cherry-pick') {
+        if (await gitOk(root, ['diff', '--cached', '--quiet'])) {
+          // Ao manter "as suas" em todos os conflitos, nada muda: o Git não aceita continuar com um commit vazio.
+          await git(root, [op, '--skip']).catch(() => git(root, [op, '--abort']));
+          this.toast('Nada mudou: as mudanças deste commit já estão (ou já foram desfeitas) na sua branch.');
+          return;
+        }
+        await git(root, [op, '--continue']);
       } else {
         return;
       }
-      this.toast('Pronto! Sua branch foi atualizada ✔');
+      this.toast(op === 'revert' ? 'Commit revertido ✔ Foi criado um novo commit que desfaz as mudanças.' : op === 'cherry-pick' ? 'Commit copiado para a sua branch ✔' : 'Pronto! Sua branch foi atualizada ✔');
     } catch (e) {
       if ((await currentOperation(root)) !== 'none' && (await readStatus(root)).some((f) => f.conflict)) {
         void ui.warn('Quick Git: há mais conflitos para resolver no próximo passo.');
@@ -1102,19 +1116,21 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     if (op === 'none') {
       return;
     }
+    const update = op === 'rebase' || op === 'merge';
+    const button = update ? 'Cancelar atualização' : 'Cancelar operação';
     const pick = await ui.warn(
-      'Cancelar a atualização?',
+      update ? 'Cancelar a atualização?' : 'Cancelar esta operação?',
       {
         modal: true,
         detail: 'Sua branch volta exatamente ao que era antes de você começar. Nenhum trabalho é perdido.',
       },
-      'Cancelar atualização'
+      button
     );
-    if (pick !== 'Cancelar atualização') {
+    if (pick !== button) {
       return;
     }
-    await git(root, op === 'rebase' ? ['rebase', '--abort'] : ['merge', '--abort']);
-    this.toast('Atualização cancelada. Tudo voltou como era ✔');
+    await git(root, [op, '--abort']);
+    this.toast(update ? 'Atualização cancelada. Tudo voltou como era ✔' : 'Operação cancelada. Tudo voltou como era ✔');
   }
 
   private async doUndoCommit(root: string): Promise<void> {
@@ -1130,6 +1146,71 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     if (pick !== 'Desfazer commit') return;
     await git(root, ['reset', '--soft', 'HEAD~1']);
     this.toast('Commit desfeito. Suas alterações continuam aqui ✔');
+  }
+
+  /**
+   * Reverter (git revert) ou copiar (git cherry-pick) um commit, sempre explicando o efeito antes.
+   * - Reverter cria um commit NOVO que desfaz o antigo (nada é apagado; seguro mesmo se já foi enviado).
+   * - Copiar traz só as mudanças de um commit de outra branch para a branch atual.
+   */
+  private async doCommitOp(root: string, kind: 'revert' | 'cherry-pick', hash: string): Promise<void> {
+    if (!isHash(hash)) return;
+    const state = await readState(root);
+    if (state.operation !== 'none') {
+      throw new Error('Termine ou cancele a operação em andamento antes de começar outra.');
+    }
+    if (state.detached) {
+      throw new Error('Você está fora de uma branch. Escolha uma branch no topo antes de continuar.');
+    }
+    if (state.files.some((f) => f.kind !== 'untracked')) {
+      throw new Error('Você tem alterações ainda não salvas. Salve um commit ou use "Guardar alterações" (Stashes) antes de continuar.');
+    }
+
+    const inBranch = await gitOk(root, ['merge-base', '--is-ancestor', hash, 'HEAD']);
+    if (kind === 'revert' && !inBranch) {
+      throw new Error('Este commit não faz parte da branch atual, então não há o que reverter aqui. Troque para a branch onde ele foi feito.');
+    }
+    if (kind === 'cherry-pick' && inBranch) {
+      this.toast('Este commit já está na sua branch, então não há nada para copiar.');
+      return;
+    }
+
+    const subject = await git(root, ['log', '-1', '--format=%s', hash]).catch(() => hash.slice(0, 7));
+    const parents = (await git(root, ['rev-list', '--parents', '-n', '1', hash]).catch(() => '')).split(/\s+/).filter(Boolean).length - 1;
+    const isMerge = parents > 1;
+
+    const button = kind === 'revert' ? 'Reverter commit' : 'Copiar commit';
+    const detail =
+      kind === 'revert'
+        ? 'Cria um NOVO commit que desfaz as mudanças deste commit. O commit original continua no histórico, então nada é apagado e é seguro mesmo que ele já tenha sido enviado para a nuvem.'
+        : 'Copia as mudanças deste commit para a sua branch atual como um novo commit, sem trazer o resto da outra branch. O commit original não é alterado. Útil para levar uma correção de uma branch para outra.';
+    const mergeNote = isMerge
+      ? kind === 'revert'
+        ? 'Este é um commit de junção (merge): o Git vai desfazer em relação à primeira branch.'
+        : 'Este é um commit de junção (merge): o Git vai copiar em relação à primeira branch.'
+      : '';
+    const conflictNote = 'Se aparecer conflito, você resolve pelo painel e pode cancelar a qualquer momento.';
+    const title =
+      kind === 'revert' ? `Reverter o commit "${subject}"?` : `Copiar o commit "${subject}" para a branch "${state.branch}"?`;
+    const pick = await ui.warn(title, { modal: true, detail: [detail, mergeNote, conflictNote].filter(Boolean).join('\n\n') }, button);
+    if (pick !== button) return;
+
+    const args = kind === 'revert' ? ['revert', '--no-edit'] : ['cherry-pick'];
+    if (isMerge) args.push('-m', '1');
+    args.push(hash);
+    try {
+      await git(root, args);
+      this.toast(kind === 'revert' ? 'Commit revertido ✔ Foi criado um novo commit que desfaz as mudanças.' : 'Commit copiado para a sua branch ✔');
+    } catch (e) {
+      if ((await currentOperation(root)) === 'none') throw e;
+      if ((await readStatus(root)).some((f) => f.conflict)) {
+        void ui.warn('Quick Git: encontrei conflitos. Resolva os arquivos listados no painel e clique em "Continuar".');
+        return;
+      }
+      // Parou sem conflitos: o commit não traz nada novo (as mudanças já estão, ou já foram desfeitas, na branch).
+      await git(root, [kind, '--abort']).catch(() => undefined);
+      this.toast('Nada mudou: as mudanças deste commit já estão (ou já foram desfeitas) na sua branch.');
+    }
   }
 
   private async doAmendCommit(root: string): Promise<void> {
@@ -1199,7 +1280,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     const leftName = entry.oldPath ?? entry.path;
     const left = entry.status === 'A' || !parent ? mk(undefined, leftName) : mk(parent, leftName);
     const right = entry.status === 'D' ? mk(undefined, entry.path) : mk(hash, entry.path);
-    await vscode.commands.executeCommand('vscode.diff', left, right, `${path.basename(file)} (antes ↔ commit)`);
+    await vscode.commands.executeCommand('vscode.diff', left, right, `${path.basename(file)} ${tr('(antes ↔ commit)')}`);
   }
 
   private async onboardingInfo(root: string | undefined, hasFolder: boolean): Promise<Payload> {

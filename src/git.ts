@@ -145,7 +145,7 @@ export interface CommitDetails {
   deletions: number;
 }
 
-export type Operation = 'none' | 'rebase' | 'merge';
+export type Operation = 'none' | 'rebase' | 'merge' | 'revert' | 'cherry-pick';
 
 export interface SyncInfo {
   branch: string;
@@ -268,6 +268,12 @@ export async function currentOperation(root: string): Promise<Operation> {
   }
   if (await exists('MERGE_HEAD')) {
     return 'merge';
+  }
+  if (await exists('REVERT_HEAD')) {
+    return 'revert';
+  }
+  if (await exists('CHERRY_PICK_HEAD')) {
+    return 'cherry-pick';
   }
   return 'none';
 }
