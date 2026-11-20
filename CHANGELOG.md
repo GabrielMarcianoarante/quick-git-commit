@@ -5,6 +5,13 @@
 - Novo: **Reverter commit (revert)**. Em qualquer commit do histórico, o botão cria um commit novo que desfaz as mudanças dele. Nada é apagado, então é seguro mesmo se o commit já foi enviado para a nuvem. Antes de agir, a extensão explica o efeito em linguagem simples.
 - Novo: **Copiar commit para esta branch (cherry-pick)**. Leva só as mudanças de um commit de outra branch para a branch atual, sem trazer o resto, útil para aproveitar uma correção.
 - Reverter e copiar funcionam com a resolução de conflitos guiada do painel (Continuar e Cancelar tudo), tratam commits de junção (merge) e avisam quando as mudanças já estão na branch, em vez de deixar o Git preso num commit vazio.
+- Novo: **Gerenciar branches** (nova seção "Branches"): renomear, apagar (avisa se há commits não mesclados) e **limpar as já mescladas** de uma vez, sempre confirmando antes.
+- Novo: **Abrir Pull Request** (GitHub e GitLab) direto do painel, já com a branch de origem e a principal preenchidas; avisa se a branch ainda não foi enviada.
+- Novo: o seletor de branch do topo agora lista também as branches que só existem na nuvem (criadas por outra pessoa) e abre uma cópia local ligada a elas; ao abrir um Pull Request dá para **escolher a branch de destino**.
+- Melhorado: mensagens claras para situações de empresa (branch protegida, acesso negado/403, repositório sem acesso, branch inexistente ou aberta em outra pasta), em vez de falhar em silêncio.
+- Novo: **aviso de atualização no painel**. A extensão procura versão nova a cada vez que o VS Code abre (sem limite diário) e mostra um aviso no topo do painel, com "Baixar atualização" e "Ignorar". Continua dando para desligar em `quickGitCommit.checkForUpdates`.
+- Segurança: nomes de branch validados (sem injeção de opções do Git), credenciais mascaradas em logs/erros, nonce criptográfico no painel, recusa de pastas não confiáveis (Workspace Trust) e novo `SECURITY.md`.
+- Corrigido: o botão **Reverter commit** não fazia nada ao clicar; a confirmação agora aparece e os avisos deixam de passar em silêncio.
 - Corrigido: **bug do idioma**. Ao mudar para o inglês, algumas partes continuavam em português: títulos das telas de comparação de arquivos, etiquetas do histórico ("só na nuvem") e dos arquivos do commit ("Alterado"), mensagens do "Editar último commit", da resolução de conflitos e da criação do repositório, dicas do modo Avançado e o seletor de escopo. Agora tudo é traduzido.
 
 ## 0.4.3

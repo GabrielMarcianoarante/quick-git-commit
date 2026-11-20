@@ -279,5 +279,12 @@
     "url": "https://github.com/GabrielMarcianoarante/quick-git-commit/issues"
   },
   "homepage": "https://github.com/GabrielMarcianoarante/quick-git-commit#readme",
-  "pricing": "Free"
+  "pricing": "Free",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Quick Git executa comandos Git na pasta aberta; em uma pasta não confiável, hooks e configurações do repositório poderiam executar código. Confie na pasta para usar."
+    },
+    "virtualWorkspaces": false
+  }
 }

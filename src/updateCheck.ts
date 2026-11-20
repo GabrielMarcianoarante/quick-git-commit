@@ -5,11 +5,40 @@ const REPO = 'GabrielMarcianoarante/quick-git-commit';
 const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const SAFE_URL_PREFIX = `https://github.com/${REPO}/`;
 const FALLBACK_URL = `https://github.com/${REPO}/releases/latest`;
-const LAST_CHECK_KEY = 'updateCheck.lastCheck';
 const IGNORED_KEY = 'updateCheck.ignoredVersion';
-const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const STARTUP_DELAY_MS = 15_000;
+const STARTUP_DELAY_MS = 3_000;
 const REQUEST_TIMEOUT_MS = 8_000;
+
+export interface AvailableUpdate {
+  version: string;
+  current: string;
+  url: string;
+}
+
+let available: AvailableUpdate | undefined;
+const emitter = new vscode.EventEmitter<AvailableUpdate | undefined>();
+export const onDidChangeUpdate = emitter.event;
+export const getAvailableUpdate = (): AvailableUpdate | undefined => available;
+
+function setAvailable(u: AvailableUpdate | undefined): void {
+  available = u;
+  emitter.fire(u);
+}
+
+/** Abre a página de download (a URL vem do próprio módulo, nunca do painel). */
+export async function openUpdatePage(): Promise<void> {
+  if (available) {
+    await vscode.env.openExternal(vscode.Uri.parse(available.url));
+  }
+}
+
+/** Esconde o aviso desta versão (volta a aparecer só numa versão mais nova). */
+export async function ignoreAvailableUpdate(state: vscode.Memento): Promise<void> {
+  if (available) {
+    await state.update(IGNORED_KEY, available.version);
+    setAvailable(undefined);
+  }
+}
 
 interface LatestRelease {
   version: string;
@@ -66,16 +95,10 @@ async function fetchLatestRelease(): Promise<LatestRelease | null> {
 export async function checkForUpdates(context: vscode.ExtensionContext, log: (line: string) => void, manual: boolean): Promise<void> {
   const current = String(context.extension.packageJSON.version ?? '');
 
-  if (!manual) {
-    if (!vscode.workspace.getConfiguration('quickGitCommit').get<boolean>('checkForUpdates', true)) {
-      return;
-    }
-    const last = context.globalState.get<number>(LAST_CHECK_KEY, 0);
-    if (Date.now() - last < CHECK_INTERVAL_MS) {
-      return;
-    }
+  // Automática: roda a CADA abertura do VS Code (sem limite diário); só respeita a configuração.
+  if (!manual && !vscode.workspace.getConfiguration('quickGitCommit').get<boolean>('checkForUpdates', true)) {
+    return;
   }
-  await context.globalState.update(LAST_CHECK_KEY, Date.now());
 
   let latest: LatestRelease | null;
   try {
@@ -89,6 +112,7 @@ export async function checkForUpdates(context: vscode.ExtensionContext, log: (li
   }
 
   if (!latest || !isNewer(latest.version, current)) {
+    setAvailable(undefined);
     if (manual) {
       await ui.info(`Você já está na versão mais recente (${current}).`);
     }
@@ -99,13 +123,15 @@ export async function checkForUpdates(context: vscode.ExtensionContext, log: (li
     return;
   }
 
-  const download = 'Baixar atualização';
-  const ignore = 'Ignorar esta versão';
-  const choice = await ui.info(`Nova versão do Quick Git Commit disponível: ${latest.version}. Você está usando a ${current}.`, download, ignore);
-  if (choice === download) {
-    await vscode.env.openExternal(vscode.Uri.parse(latest.url));
-  } else if (choice === ignore) {
-    await context.globalState.update(IGNORED_KEY, latest.version);
+  // Aviso visível no próprio painel da extensão (banner no topo).
+  setAvailable({ version: latest.version, current, url: latest.url });
+
+  if (manual) {
+    const download = 'Baixar atualização';
+    const choice = await ui.info(`Nova versão do Quick Git Commit disponível: ${latest.version}. Você está usando a ${current}.`, download);
+    if (choice === download) {
+      await openUpdatePage();
+    }
   }
 }
 

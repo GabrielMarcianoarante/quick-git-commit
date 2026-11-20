@@ -471,6 +471,7 @@
     updateScopeSuggestions();
     renderCommit();
     renderUpdate();
+    renderBranches();
     renderStashes();
     renderReflog();
     renderHistory();
@@ -628,10 +629,31 @@
     for (const b of state.branches.local) {
       sel.append(h('option', { value: b, text: b }));
     }
+    const remoteOnly = state.branches.remote.filter((r) => !r.endsWith('/HEAD') && !state.branches.local.includes(r.slice(r.indexOf('/') + 1)));
+    if (remoteOnly.length) {
+      const g = h('optgroup', { label: 'Só na nuvem (clique para abrir)' });
+      remoteOnly.forEach((r) => g.append(h('option', { value: r, text: r })));
+      sel.append(g);
+    }
     sel.value = state.detached ? '' : state.branch;
     sel.disabled = state.operation !== 'none';
     $('btnNewBranch').disabled = state.operation !== 'none';
     $('btnNewBranch').title = advanced() ? 'git checkout -b' : 'Criar nova branch';
+  }
+
+  function renderUpdateBanner(u) {
+    const el = $('updateBanner');
+    if (!el) return;
+    el.replaceChildren();
+    if (!u) return;
+    el.append(
+      h('div', { class: 'card info', role: 'status' },
+        h('div', { class: 'cardTitle' }, icon('open'), h('span', { text: 'Nova versão disponível: ' + u.version })),
+        h('p', { class: 'hint', text: 'Você está usando a ' + u.current + '. Baixe a atualização para receber as novidades e correções.' }),
+        h('div', { class: 'row' },
+          btn('Baixar atualização', { kind: 'primary', icon: 'open', small: true, onclick: () => post('openUpdate') }),
+          btn('Ignorar', { small: true, onclick: () => post('ignoreUpdate') })))
+    );
   }
 
   function renderBanner() {
@@ -1059,6 +1081,38 @@
     return 'há ' + n + ' ' + (n === 1 ? u[0] : u[1]);
   }
 
+  // ---------- Branches ----------
+  function renderBranches() {
+    const list = $('branchesList');
+    if (!list) return;
+    const free = state.operation === 'none';
+    const pr = $('btnPR');
+    pr.replaceChildren(icon('merge'), h('span', { text: advanced() ? 'Pull Request' : 'Abrir Pull Request' }));
+    pr.title = 'Abre a página do GitHub/GitLab para pedir a revisão desta branch.';
+    pr.onclick = () => post('openPR', { branch: state.branch });
+    pr.disabled = !state.branch || state.detached;
+    const cl = $('btnCleanMerged');
+    cl.replaceChildren(icon('x'), h('span', { text: advanced() ? 'branch --merged' : 'Limpar mescladas' }));
+    cl.title = 'Apaga as branches que já foram mescladas na principal.';
+    cl.onclick = () => post('cleanMerged');
+    cl.disabled = !free;
+    const badge = $('branchesBadge');
+    badge.replaceChildren();
+    badge.append(h('span', { class: 'tag soft', text: String(state.branches.local.length) }));
+    list.replaceChildren();
+    for (const b of state.branches.local) {
+      const cur = b === state.branch;
+      list.append(
+        h('div', { class: 'row' },
+          h('span', { class: 'grow mono', text: b + (cur ? ' ●' : '') }),
+          h('button', { type: 'button', class: 'iconBtn', title: advanced() ? 'git branch -m' : 'Renomear', 'aria-label': 'Renomear ' + b, disabled: !free, onclick: () => post('renameBranch', { branch: b }) }, icon('commit')),
+          h('button', { type: 'button', class: 'iconBtn', title: 'Abrir Pull Request', 'aria-label': 'Abrir Pull Request de ' + b, onclick: () => post('openPR', { branch: b }) }, icon('merge')),
+          h('button', { type: 'button', class: 'iconBtn danger', title: advanced() ? 'git branch -d' : 'Apagar', 'aria-label': 'Apagar ' + b, disabled: !free || cur, onclick: () => post('deleteBranch', { branch: b }) }, icon('x'))
+        )
+      );
+    }
+  }
+
   // ---------- Stashes (alterações guardadas) ----------
   function stashName(subject) {
     return (subject || '').replace(/^(WIP )?[Oo]n [^:]+:\s*/, '').replace(/^WIP on [^:]+:\s*/, '') || 'Alterações guardadas';
@@ -1160,6 +1214,8 @@
     if (m.type === 'state') {
       state = m.state;
       render();
+    } else if (m.type === 'update') {
+      renderUpdateBanner(m.update);
     } else if (m.type === 'config') {
       CFG = { ...CFG, ...m.cfg };
       MAXLEN = typeof CFG.maxLen === 'number' ? CFG.maxLen : 72;

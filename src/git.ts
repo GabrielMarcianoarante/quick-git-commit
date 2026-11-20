@@ -18,6 +18,19 @@ export function setGitLogger(fn: (line: string) => void): void {
   logger = fn;
 }
 
+/** Remove credenciais embutidas em URLs (https://usuario:token@host) de logs e mensagens. */
+export function redact(text: string): string {
+  return text.replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, '$1***@');
+}
+
+/** Nome de branch seguro para virar argumento do Git: válido e nunca começando com "-" (evita injeção de opção). */
+export async function isSafeBranch(root: string, name: unknown): Promise<boolean> {
+  if (typeof name !== 'string' || !name || name.startsWith('-') || name.length > 250 || /[\u0000-\u001f]/.test(name)) {
+    return false;
+  }
+  return gitOk(root, ['check-ref-format', '--branch', name]);
+}
+
 export class GitError extends Error {
   constructor(message: string) {
     super(message);
@@ -33,7 +46,7 @@ interface RunOptions {
 export async function git(cwd: string, args: string[], options: RunOptions = {}): Promise<string> {
   const extra = NETWORK_COMMANDS.has(args[0]) ? await authEnv().catch(() => undefined) : undefined;
   return new Promise((resolve, reject) => {
-    logger(`$ git ${args.join(' ')}`);
+    logger(redact(`$ git ${args.join(' ')}`));
     execFile(
       'git',
       args,
@@ -54,13 +67,14 @@ export async function git(cwd: string, args: string[], options: RunOptions = {})
       (error, stdout, stderr) => {
         if (error) {
           const code = (error as NodeJS.ErrnoException).code;
-          const text =
+          let text =
             code === 'ENOENT'
               ? 'Git não encontrado. Instale o Git e reinicie o VS Code.'
               : [stderr, stdout]
                   .map((s) => s.trim())
                   .filter(Boolean)
                   .join('\n') || error.message;
+          text = redact(text);
           logger(text);
           reject(new GitError(text));
         } else {

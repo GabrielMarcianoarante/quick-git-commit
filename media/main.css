@@ -357,3 +357,7 @@ input.numInput[type="text"] { width: 72px; flex: none; text-align: center; }
 .recoveryKind { font-size: .68em; text-transform: uppercase; letter-spacing: .4px; padding: 1px 6px; border-radius: 999px; color: var(--vscode-editorInfo-foreground, #3794ff); background: rgba(55,148,255,.14); }
 .stashActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 4px; }
 .btn.danger { color: var(--vscode-errorForeground); border-color: var(--vscode-errorForeground); }
+
+#updateBanner { margin: 8px 8px 0; }
+#updateBanner:empty { display: none; }
+.card.info { border-color: var(--vscode-editorInfo-foreground, #3794ff); }

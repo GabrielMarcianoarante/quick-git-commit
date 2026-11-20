@@ -1,13 +1,17 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
+import { randomBytes } from 'crypto';
 import * as path from 'path';
 import { getConfig, settingsPayload } from './config';
 import { currentLang, tr, ui } from './i18n';
+import { getAvailableUpdate, ignoreAvailableUpdate, onDidChangeUpdate, openUpdatePage } from './updateCheck';
 import { isMissingWorkflowScope, resolveMissingWorkflowScope } from './githubScope';
 import {
   git,
   isHash,
+  isSafeBranch,
+  redact,
   readCommitDetails,
   gitOk,
   getRepoRoot,
@@ -39,6 +43,21 @@ function friendly(raw: string): string {
   }
   if (isMissingWorkflowScope(raw)) {
     return 'O GitHub bloqueou o envio: falta a permissão "workflow" na sua conta conectada. Tente "Enviar" de novo para autorizar.';
+  }
+  if (m.includes('protected branch') || m.includes('gh006') || m.includes('pre-receive hook declined') || m.includes('remote rejected')) {
+    return 'A nuvem recusou o envio: esta branch é protegida ou você não tem permissão para escrever nela. Crie uma branch sua e abra um Pull Request.';
+  }
+  if (m.includes('error: 403') || m.includes('returned error: 403') || m.includes('access denied') || m.includes('not allowed')) {
+    return 'Você não tem permissão para acessar/alterar esta branch ou repositório (acesso negado). Peça acesso ao responsável pelo repositório.';
+  }
+  if (m.includes('repository not found') || m.includes('error: 404')) {
+    return 'Repositório não encontrado ou sem acesso para a sua conta. Confirme o endereço e peça acesso, se necessário.';
+  }
+  if (m.includes('did not match any') || m.includes('invalid reference')) {
+    return 'Essa branch não existe mais neste computador nem na nuvem. Atualize a lista (verificar novidades) e tente de novo.';
+  }
+  if (m.includes('already checked out') || m.includes('is already used by worktree')) {
+    return 'Essa branch já está aberta em outra pasta de trabalho (worktree). Feche-a lá ou escolha outra branch.';
   }
   if (m.includes('could not resolve host') || m.includes('unable to access') || m.includes('network is unreachable')) {
     return 'Não consegui falar com o servidor. Verifique sua internet e tente novamente.';
@@ -106,6 +125,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     private readonly output: vscode.OutputChannel,
     private readonly globalState: vscode.Memento
   ) {
+    this.disposables.push(onDidChangeUpdate((u) => this.post({ type: 'update', update: u })));
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
     const schedule = (): void => this.scheduleRefresh();
     this.disposables.push(
@@ -163,7 +183,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
   }
 
   private html(webview: vscode.Webview): string {
-    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    const nonce = randomBytes(24).toString('base64').replace(/[^A-Za-z0-9]/g, 'x');
     const css = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'main.css'));
     const js = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'main.js'));
     const i18nJs = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'i18n.js'));
@@ -198,6 +218,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       </span>
     </div>
     <div id="settings" class="settings hidden"></div>
+    <div id="updateBanner"></div>
     <header id="top" class="top">
       <div class="modeRow">
         <div class="seg" role="radiogroup" aria-label="Modo de exibição">
@@ -260,6 +281,14 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
         <summary id="secHistory"><span class="sTitle" data-icon="history">Histórico</span><span id="historyBadge" class="badges"></span></summary>
         <div class="sBody">
           <div id="historyBody"></div>
+        </div>
+      </details>
+
+      <details class="section" data-key="branches">
+        <summary id="secBranches"><span class="sTitle" data-icon="branch">Branches</span><span id="branchesBadge" class="badges"></span></summary>
+        <div class="sBody">
+          <div class="row"><button id="btnPR" class="btn primary grow" type="button"></button><button id="btnCleanMerged" class="btn secondary grow" type="button"></button></div>
+          <div id="branchesList"></div>
         </div>
       </details>
 
@@ -504,6 +533,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
 
   private async onMessage(msg: Payload): Promise<void> {
     if (msg.type === 'ready') {
+      this.post({ type: 'update', update: getAvailableUpdate() });
       await this.refresh(true);
       return;
     }
@@ -520,6 +550,12 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
         break;
       case 'openVsSettings':
         await vscode.commands.executeCommand('workbench.action.openSettings', 'quickGitCommit');
+        break;
+      case 'openUpdate':
+        await openUpdatePage();
+        break;
+      case 'ignoreUpdate':
+        await ignoreAvailableUpdate(this.globalState);
         break;
       case 'refresh':
         await this.refresh(true);
@@ -544,6 +580,18 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
         break;
       case 'newBranch':
         await this.newBranch();
+        break;
+      case 'renameBranch':
+        await this.renameBranch(String(p.branch ?? ''));
+        break;
+      case 'deleteBranch':
+        await this.deleteBranch(String(p.branch ?? ''));
+        break;
+      case 'cleanMerged':
+        await this.cleanMerged();
+        break;
+      case 'openPR':
+        await this.openPR(String(p.branch ?? ''));
         break;
       case 'stage':
         void this.enqueue(undefined, (r) => this.doStage(r, p.paths, true));
@@ -591,10 +639,10 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
         void this.enqueue('Editando o último commit...', (r) => this.doAmendCommit(r));
         break;
       case 'revertCommit':
-        void this.enqueue('Revertendo commit...', (r) => this.doCommitOp(r, 'revert', String(p.hash ?? '')));
+        void this.commitOp('revert', String(p.hash ?? ''));
         break;
       case 'cherryPickCommit':
-        void this.enqueue('Copiando commit...', (r) => this.doCommitOp(r, 'cherry-pick', String(p.hash ?? '')));
+        void this.commitOp('cherry-pick', String(p.hash ?? ''));
         break;
       case 'commitDetails':
         void this.enqueue(undefined, (r) => this.sendCommitDetails(r, String(p.hash ?? '')));
@@ -820,11 +868,166 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     if ((await currentOperation(root)) !== 'none') {
       throw new Error('Termine ou cancele a atualização em andamento antes de trocar de branch.');
     }
+    if (!(await isSafeBranch(root, branch))) {
+      throw new Error('Nome de branch inválido.');
+    }
     const branches = await listBranches(root);
-    if (!branches.local.includes(branch)) {
+    if (branches.local.includes(branch)) {
+      await git(root, ['checkout', branch, '--']);
       return;
     }
-    await git(root, ['checkout', branch]);
+    // Branch que só existe na nuvem (ex.: criada por outra pessoa): cria a cópia local ligada a ela.
+    const remote = branches.remote.find((r) => r === branch);
+    if (remote && !remote.endsWith('/HEAD')) {
+      const local = remote.slice(remote.indexOf('/') + 1);
+      if (branches.local.includes(local)) {
+        await git(root, ['checkout', local]);
+      } else {
+        await git(root, ['checkout', '-b', local, '--track', remote]);
+      }
+      this.toast(`Você está na branch "${local}" ✔`);
+      return;
+    }
+    throw new Error(`pathspec '${branch}' did not match any branch`);
+  }
+
+  // ---------- Branches: renomear, apagar, limpar mescladas, abrir Pull Request ----------
+  private protectedBranch(name: string): boolean {
+    return ['main', 'master', 'develop', 'dev', 'trunk'].includes(name);
+  }
+
+  private async baseBranch(root: string): Promise<string> {
+    const head = await git(root, ['symbolic-ref', '--short', '-q', 'refs/remotes/origin/HEAD']).catch(() => '');
+    if (head.trim()) return head.trim().replace(/^origin\//, '');
+    const { local, remote } = await listBranches(root);
+    return ['main', 'master', 'develop'].find((b) => local.includes(b) || remote.includes(`origin/${b}`)) ?? 'main';
+  }
+
+  private async renameBranch(branch: string): Promise<void> {
+    const root = await this.getRoot().catch(() => undefined);
+    if (!root || !(await isSafeBranch(root, branch))) return;
+    const name = await ui.input({
+      title: 'Renomear branch',
+      prompt: `Novo nome para a branch "${branch}"`,
+      value: branch,
+      validateInput: async (v) => {
+        const t = v.trim();
+        if (!t) return 'Informe um nome.';
+        if (t === branch) return undefined;
+        if (!(await gitOk(root, ['check-ref-format', '--branch', t]))) return 'Nome inválido (evite espaços e caracteres especiais).';
+        return (await gitOk(root, ['rev-parse', '--verify', '-q', `refs/heads/${t}`])) ? 'Já existe uma branch com esse nome.' : undefined;
+      },
+    });
+    if (!name || name.trim() === branch) return;
+    void this.enqueue('Renomeando branch...', async (r) => {
+      await git(r, ['branch', '-m', '--', branch, name.trim()]);
+      this.toast(`Branch renomeada para "${name.trim()}" ✔ Se ela já estava na nuvem, a cópia de lá continua com o nome antigo.`);
+    });
+  }
+
+  private async deleteBranch(branch: string): Promise<void> {
+    const root = await this.getRoot().catch(() => undefined);
+    if (!root || !(await isSafeBranch(root, branch))) return;
+    const state = await readState(root);
+    if (state.branch === branch) {
+      void ui.warn('Você está nesta branch. Troque para outra antes de apagar.');
+      return;
+    }
+    const base = await this.baseBranch(root);
+    const merged = await gitOk(root, ['merge-base', '--is-ancestor', branch, base]);
+    const label = merged ? 'Apagar branch' : 'Apagar mesmo assim';
+    const pick = await ui.warn(
+      `Apagar a branch "${branch}"?`,
+      {
+        modal: true,
+        detail: merged
+          ? 'Ela já foi mesclada, então os commits continuam na branch principal. Só o nome da branch some.'
+          : 'ATENÇÃO: esta branch tem commits que ainda NÃO foram mesclados. Apagar pode fazer você perdê-los (dá para recuperar pela seção Recuperação).',
+      },
+      label
+    );
+    if (pick !== label) return;
+    void this.enqueue('Apagando branch...', async (r) => {
+      await git(r, ['branch', merged ? '-d' : '-D', '--', branch]);
+      this.toast(`Branch "${branch}" apagada ✔`);
+    });
+  }
+
+  private async cleanMerged(): Promise<void> {
+    const root = await this.getRoot().catch(() => undefined);
+    if (!root) return;
+    const state = await readState(root);
+    const base = await this.baseBranch(root);
+    const out = await git(root, ['branch', '--merged', base, '--format=%(refname:short)']).catch(() => '');
+    const list = out.split('\n').map((x) => x.trim()).filter((b) => b && b !== state.branch && b !== base && !this.protectedBranch(b));
+    if (!list.length) {
+      this.toast('Nenhuma branch mesclada para limpar.');
+      return;
+    }
+    const button = `Apagar ${list.length}`;
+    const pick = await ui.warn(
+      `Apagar ${list.length} branch(es) já mesclada(s) em "${base}"?`,
+      { modal: true, detail: list.join('\n') + '\n\nOs commits continuam na branch principal; só os nomes somem.' },
+      button
+    );
+    if (pick !== button) return;
+    void this.enqueue('Limpando branches...', async (r) => {
+      for (const b of list) await git(r, ['branch', '-d', '--', b]).catch(() => undefined);
+      this.toast(`${list.length} branch(es) limpa(s) ✔`);
+    });
+  }
+
+  private async openPR(branch: string): Promise<void> {
+    try {
+      const root = await this.getRoot();
+      if (!root) return;
+      const state = await readState(root);
+      const name = branch || state.branch;
+      if (name && !(await isSafeBranch(root, name))) throw new Error('Nome de branch inválido.');
+      if (!name || state.detached) throw new Error('Escolha uma branch antes de abrir o Pull Request.');
+      const remotes = (await git(root, ['remote'])).split('\n').map((x) => x.trim()).filter(Boolean);
+      const remote = remotes.includes('origin') ? 'origin' : remotes[0];
+      if (!remote) throw new Error('Este projeto ainda não tem uma nuvem (remote). Adicione uma antes de abrir o Pull Request.');
+      const url = (await git(root, ['remote', 'get-url', remote])).trim();
+      const m = url.match(/^(?:https?:\/\/(?:[^@/]+@)?|ssh:\/\/(?:[^@/]+@)?|[^@/]+@)([^/:]+)(?::\d+)?[/:](.+?)(?:\.git)?\/?$/);
+      if (!m) throw new Error('Não consegui entender o endereço da nuvem: ' + redact(url));
+      const [, host, repo] = m;
+      if (!/^[A-Za-z0-9.-]+$/.test(host) || !/^[\w.\-]+(?:\/[\w.\-]+)+$/.test(repo)) throw new Error('Endereço da nuvem com caracteres não permitidos.');
+      const defaultBase = await this.baseBranch(root);
+      const { remote: remoteBranches } = await listBranches(root);
+      const targets = remoteBranches.filter((r) => r.startsWith(`${remote}/`) && !r.endsWith('/HEAD')).map((r) => r.slice(remote.length + 1)).filter((b) => b !== name);
+      let base = defaultBase;
+      if (targets.length > 1) {
+        const ordered = [defaultBase, ...targets.filter((b) => b !== defaultBase)].filter((b) => targets.includes(b));
+        const picked = await ui.pick(ordered.map((b) => ({ label: b, description: b === defaultBase ? 'principal' : '' })), {
+          title: 'Pull Request: para qual branch?',
+          placeHolder: `Escolha o destino de "${name}" (as mudanças serão propostas para ela)`,
+        });
+        if (!picked) return;
+        base = (picked as vscode.QuickPickItem).label;
+      } else if (targets.length === 1) {
+        base = targets[0];
+      }
+      if (name === base) throw new Error(`Você está na branch principal ("${base}"). Crie ou escolha outra branch para abrir o Pull Request.`);
+      const pushed = await gitOk(root, ['rev-parse', '--verify', '-q', `refs/remotes/${remote}/${name}`]);
+      if (!pushed) {
+        const b = 'Abrir mesmo assim';
+        const pick = await ui.warn(`A branch "${name}" ainda não foi enviada para a nuvem.`, { modal: true, detail: 'Envie primeiro (botão de enviar), senão o Pull Request não terá os seus commits.' }, b);
+        if (pick !== b) return;
+      }
+      const enc = encodeURIComponent;
+      let link: string;
+      if (host.includes('github')) {
+        link = `https://${host}/${repo}/compare/${enc(base)}...${enc(name)}?expand=1`;
+      } else if (host.includes('gitlab')) {
+        link = `https://${host}/${repo}/-/merge_requests/new?merge_request%5Bsource_branch%5D=${enc(name)}&merge_request%5Btarget_branch%5D=${enc(base)}`;
+      } else {
+        throw new Error(`Só consigo abrir Pull Request no GitHub e no GitLab (nuvem encontrada: ${host}).`);
+      }
+      await vscode.env.openExternal(vscode.Uri.parse(link));
+    } catch (e) {
+      this.showError(e);
+    }
   }
 
   private async newBranch(): Promise<void> {
@@ -1153,8 +1356,26 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
    * - Reverter cria um commit NOVO que desfaz o antigo (nada é apagado; seguro mesmo se já foi enviado).
    * - Copiar traz só as mudanças de um commit de outra branch para a branch atual.
    */
-  private async doCommitOp(root: string, kind: 'revert' | 'cherry-pick', hash: string): Promise<void> {
-    if (!isHash(hash)) return;
+  /** Valida e confirma FORA da fila (sem overlay), e só então enfileira a execução. */
+  private async commitOp(kind: 'revert' | 'cherry-pick', hash: string): Promise<void> {
+    this.output.appendLine(`[commitOp] ${kind} ${hash}`);
+    try {
+      if (!isHash(hash)) {
+        throw new Error('Commit inválido.');
+      }
+      const root = await this.getRoot();
+      if (!root) {
+        void ui.warn('Quick Git: abra uma pasta que seja um repositório Git.');
+        return;
+      }
+      if (!(await this.confirmCommitOp(root, kind, hash))) return;
+      void this.enqueue(kind === 'revert' ? 'Revertendo commit...' : 'Copiando commit...', (r) => this.runCommitOp(r, kind, hash));
+    } catch (e) {
+      this.showError(e);
+    }
+  }
+
+  private async confirmCommitOp(root: string, kind: 'revert' | 'cherry-pick', hash: string): Promise<boolean> {
     const state = await readState(root);
     if (state.operation !== 'none') {
       throw new Error('Termine ou cancele a operação em andamento antes de começar outra.');
@@ -1172,7 +1393,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     }
     if (kind === 'cherry-pick' && inBranch) {
       this.toast('Este commit já está na sua branch, então não há nada para copiar.');
-      return;
+      return false;
     }
 
     const subject = await git(root, ['log', '-1', '--format=%s', hash]).catch(() => hash.slice(0, 7));
@@ -1193,8 +1414,12 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     const title =
       kind === 'revert' ? `Reverter o commit "${subject}"?` : `Copiar o commit "${subject}" para a branch "${state.branch}"?`;
     const pick = await ui.warn(title, { modal: true, detail: [detail, mergeNote, conflictNote].filter(Boolean).join('\n\n') }, button);
-    if (pick !== button) return;
+    return pick === button;
+  }
 
+  private async runCommitOp(root: string, kind: 'revert' | 'cherry-pick', hash: string): Promise<void> {
+    const parents = (await git(root, ['rev-list', '--parents', '-n', '1', hash]).catch(() => '')).split(/\s+/).filter(Boolean).length - 1;
+    const isMerge = parents > 1;
     const args = kind === 'revert' ? ['revert', '--no-edit'] : ['cherry-pick'];
     if (isMerge) args.push('-m', '1');
     args.push(hash);
