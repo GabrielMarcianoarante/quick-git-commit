@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.6
+
+- Documentação: README atualizado, com as imagens da aba IA (AI Guard) refeitas no tema escuro e um GIF mostrando a revisão em ação. Nenhuma mudança no código da extensão.
+
 ## 0.4.5
 
 - Novo: **AI Guard**, a segunda chave para quem programa com IA (Claude Code, Codex, Copilot, Cursor...). Quando a IA mexe no projeto, a extensão avisa e mostra o que mudou com **riscos destacados**: segredos no código (chaves AWS/GitHub/Anthropic/OpenAI/Stripe/Google, JWT, URL de banco com senha, chave privada), arquivos `.env`/chaves entrando nas mudanças, `.gitignore` que deixou de proteger segredos, workflows de CI, scripts de instalação no `package.json`, comandos perigosos (`curl | sh`, `rm -rf`, TLS desligado, `--no-verify`, SQL por concatenação), testes apagados ou desativados e mudanças enormes. Tudo roda localmente, sem enviar nada para lugar nenhum.
