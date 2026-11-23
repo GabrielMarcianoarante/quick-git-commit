@@ -3,6 +3,8 @@ import { git, gitOk, getRepoRoot } from './git';
 import { getConfig } from './config';
 import { tr, ui } from './i18n';
 import { isMissingWorkflowScope, resolveMissingWorkflowScope } from './githubScope';
+import { friendly } from './errors';
+import { confirmSafeToCommit } from './aiGuard';
 
 const KNOWN: Record<string, string> = {
   feat: 'Nova funcionalidade',
@@ -233,6 +235,11 @@ export async function runQuickCommit(onDone?: () => void): Promise<void> {
       return;
     }
 
+    const nothingStaged = !(await git(cwd, ['diff', '--cached', '--name-only']));
+    if (!(await confirmSafeToCommit(cwd, nothingStaged))) {
+      return;
+    }
+
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
@@ -268,7 +275,7 @@ export async function runQuickCommit(onDone?: () => void): Promise<void> {
         ui.info('Commits enviados para a nuvem ✔');
       }
     } else {
-      ui.error(`Quick Git Commit: ${msg}`);
+      ui.error(`Quick Git Commit: ${friendly(msg)}`);
     }
   } finally {
     onDone?.();

@@ -4,6 +4,7 @@ import { runQuickCommit } from './quickCommit';
 import { tr } from './i18n';
 import { getGithubSessionForGit } from './githubScope';
 import { checkForUpdates, scheduleUpdateCheck } from './updateCheck';
+import { AiGuard } from './aiGuard';
 import { DIFF_SCHEME, GitContentProvider, QuickGitViewProvider } from './panel';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -44,6 +45,23 @@ export function activate(context: vscode.ExtensionContext): void {
     checkForUpdates(context, (line) => output.appendLine(line), true)
   );
 
+  const aiGuard = new AiGuard(
+    context.extension.id,
+    () => void provider.refresh(true),
+    (d) => provider.setAiReview(d)
+  );
+  const ws = (): string | undefined => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const aiScan = vscode.commands.registerCommand('quickGitCommit.aiScan', () => (ws() ? aiGuard.scanOnly(ws()!) : undefined));
+  const aiFocus = vscode.commands.registerCommand('quickGitCommit.aiFocus', () => provider.focusAi());
+  const aiUndo = vscode.commands.registerCommand('quickGitCommit.aiUndo', () => (ws() ? aiGuard.undoFor(ws()!) : undefined));
+  const aiReview = vscode.commands.registerCommand('quickGitCommit.aiReview', async () => {
+    const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (folder) {
+      await aiGuard.review(folder, { quiet: false, manual: true });
+    }
+  });
+  const aiSetup = vscode.commands.registerCommand('quickGitCommit.aiSetup', () => aiGuard.setup());
+
   const act = (id: string, type: string) => vscode.commands.registerCommand(id, () => provider.action(type));
   const fetchCmd = act('quickGitCommit.fetch', 'fetch');
   const pullCmd = act('quickGitCommit.pull', 'pull');
@@ -67,6 +85,12 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     output,
     provider,
+    aiGuard,
+    aiReview,
+    aiSetup,
+    aiScan,
+    aiFocus,
+    aiUndo,
     quickCommit,
     openPanel,
     refresh,

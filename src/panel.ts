@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { confirmSafeToCommit } from './aiGuard';
 import * as fs from 'fs';
 import * as os from 'os';
 import { randomBytes } from 'crypto';
@@ -7,6 +8,7 @@ import { getConfig, settingsPayload } from './config';
 import { currentLang, tr, ui } from './i18n';
 import { getAvailableUpdate, ignoreAvailableUpdate, onDidChangeUpdate, openUpdatePage } from './updateCheck';
 import { isMissingWorkflowScope, resolveMissingWorkflowScope } from './githubScope';
+import { friendly } from './errors';
 import {
   git,
   isHash,
@@ -20,66 +22,15 @@ import {
   listBranches,
   readState,
   readStatus,
+  createRestorePoint,
+  restoreToPoint,
+  deleteRestorePoint,
+  commitsSincePoint,
   FileEntry,
 } from './git';
 
 export const DIFF_SCHEME = 'qgc-git';
 const ONBOARDING_KEY = 'quickGitCommit.onboardingDone';
-
-/** Traduz erros comuns do Git para uma linguagem que qualquer pessoa entende. */
-function friendly(raw: string): string {
-  const m = raw.toLowerCase();
-  if (m.includes('git não encontrado')) {
-    return raw;
-  }
-  if (
-    m.includes('authentication failed') ||
-    m.includes('could not read username') ||
-    m.includes('terminal prompts disabled') ||
-    m.includes('permission denied') ||
-    m.includes('invalid username or password')
-  ) {
-    return 'Não consegui entrar na sua conta do repositório online. Faça login (GitHub no VS Code ou Git Credential Manager) e tente de novo.';
-  }
-  if (isMissingWorkflowScope(raw)) {
-    return 'O GitHub bloqueou o envio: falta a permissão "workflow" na sua conta conectada. Tente "Enviar" de novo para autorizar.';
-  }
-  if (m.includes('protected branch') || m.includes('gh006') || m.includes('pre-receive hook declined') || m.includes('remote rejected')) {
-    return 'A nuvem recusou o envio: esta branch é protegida ou você não tem permissão para escrever nela. Crie uma branch sua e abra um Pull Request.';
-  }
-  if (m.includes('error: 403') || m.includes('returned error: 403') || m.includes('access denied') || m.includes('not allowed')) {
-    return 'Você não tem permissão para acessar/alterar esta branch ou repositório (acesso negado). Peça acesso ao responsável pelo repositório.';
-  }
-  if (m.includes('repository not found') || m.includes('error: 404')) {
-    return 'Repositório não encontrado ou sem acesso para a sua conta. Confirme o endereço e peça acesso, se necessário.';
-  }
-  if (m.includes('did not match any') || m.includes('invalid reference')) {
-    return 'Essa branch não existe mais neste computador nem na nuvem. Atualize a lista (verificar novidades) e tente de novo.';
-  }
-  if (m.includes('already checked out') || m.includes('is already used by worktree')) {
-    return 'Essa branch já está aberta em outra pasta de trabalho (worktree). Feche-a lá ou escolha outra branch.';
-  }
-  if (m.includes('could not resolve host') || m.includes('unable to access') || m.includes('network is unreachable')) {
-    return 'Não consegui falar com o servidor. Verifique sua internet e tente novamente.';
-  }
-  if (m.includes('please tell me who you are') || m.includes('unable to auto-detect email')) {
-    return 'O Git ainda não sabe quem é você. Rode no terminal: git config --global user.name "Seu Nome" e git config --global user.email "voce@email.com".';
-  }
-  if (m.includes('would be overwritten') || m.includes('your local changes')) {
-    return 'Você tem alterações que seriam sobrescritas. Faça um commit (ou desfaça essas alterações) antes de continuar.';
-  }
-  if (m.includes('nothing to commit')) {
-    return 'Não há nada para salvar no commit.';
-  }
-  if (m.includes('not possible to fast-forward') || m.includes('diverging branches')) {
-    return 'Sua branch e a da nuvem seguiram caminhos diferentes. Use "Atualizar minha branch" (Rebase ou Merge).';
-  }
-  if (m.includes('no remote') || m.includes("'origin' does not appear to be a git repository")) {
-    return 'Esta pasta ainda não está ligada a um repositório online. Use "Conectar à nuvem".';
-  }
-  const first = raw.trim().split('\n').slice(0, 4).join('\n');
-  return first.length > 400 ? first.slice(0, 400) + '…' : first;
-}
 
 /** Entrega o conteúdo de um arquivo em um commit/índice, para o editor de diferenças. */
 export class GitContentProvider implements vscode.TextDocumentContentProvider {
@@ -239,12 +190,13 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     <div id="banner"></div>
 
     <main id="main" class="hidden">
-      <details class="section" data-key="sync" open>
+      <nav id="tabs" class="tabs" role="tablist" aria-label="Seções"></nav>
+      <details class="section" data-tab="work" data-key="sync" open>
         <summary id="secSync"><span class="sTitle" data-icon="cloud">Sincronizar com a nuvem</span><span id="syncBadge" class="badges"></span></summary>
         <div id="syncBody" class="sBody"></div>
       </details>
 
-      <details class="section" data-key="changes" open>
+      <details class="section" data-tab="work" data-key="changes" open>
         <summary id="secChanges"><span class="sTitle" data-icon="file">Minhas alterações</span><span id="changesBadge" class="badges"></span></summary>
         <div class="sBody">
           <div id="filesList"></div>
@@ -267,7 +219,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
         </div>
       </details>
 
-      <details class="section" data-key="update">
+      <details class="section" data-tab="work" data-key="update">
         <summary id="secUpdate"><span class="sTitle" data-icon="merge">Atualizar minha branch</span></summary>
         <div class="sBody">
           <p class="hint">Traga para a sua branch as novidades de outra (por exemplo, a <b>main</b>), sem perder o seu trabalho.</p>
@@ -277,14 +229,14 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
         </div>
       </details>
 
-      <details class="section" data-key="history" open>
+      <details class="section" data-tab="history" data-key="history" open>
         <summary id="secHistory"><span class="sTitle" data-icon="history">Histórico</span><span id="historyBadge" class="badges"></span></summary>
         <div class="sBody">
           <div id="historyBody"></div>
         </div>
       </details>
 
-      <details class="section" data-key="branches">
+      <details class="section" data-tab="history" data-key="branches">
         <summary id="secBranches"><span class="sTitle" data-icon="branch">Branches</span><span id="branchesBadge" class="badges"></span></summary>
         <div class="sBody">
           <div class="row"><button id="btnPR" class="btn primary grow" type="button"></button><button id="btnCleanMerged" class="btn secondary grow" type="button"></button></div>
@@ -292,7 +244,25 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
         </div>
       </details>
 
-      <details class="section" data-key="stashes" open>
+      <details class="section" data-tab="ai" data-key="aiReview" open>
+        <summary id="secAi"><span class="sTitle" data-icon="shield">Revisão IA</span><span id="aiBadge" class="badges"></span></summary>
+        <div class="sBody">
+          <p class="hint">Quando uma IA mexe no projeto, veja aqui o que mudou e os riscos (segredos, .env, CI, comandos perigosos) antes de publicar.</p>
+          <div id="aiBar" class="row"></div>
+          <div id="aiList"></div>
+        </div>
+      </details>
+
+      <details class="section" data-tab="ai" data-key="restore" open>
+        <summary id="secRestore"><span class="sTitle" data-icon="history">Pontos de restauração</span><span id="rpBadge" class="badges"></span></summary>
+        <div class="sBody">
+          <p class="hint">Salve uma "foto" dos seus arquivos antes de algo arriscado, como pedir para uma IA mexer no projeto. Se algo der errado, volte com um clique.</p>
+          <div class="row"><button id="btnRpSave" class="btn primary grow" type="button"></button></div>
+          <div id="rpList"></div>
+        </div>
+      </details>
+
+      <details class="section" data-tab="rescue" data-key="stashes" open>
         <summary id="secStashes"><span class="sTitle" data-icon="folder">Stashes</span><span id="stashesBadge" class="badges"></span></summary>
         <div class="sBody">
           <div class="row"><button id="btnStashSave" class="btn primary grow" type="button"></button></div>
@@ -300,7 +270,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
         </div>
       </details>
 
-      <details class="section" data-key="recovery">
+      <details class="section" data-tab="rescue" data-key="recovery">
         <summary id="secRecovery"><span class="sTitle" data-icon="undo">Recuperação</span><span id="recoveryBadge" class="badges"></span></summary>
         <div class="sBody">
           <p class="hint">Escolha um momento perdido para criar uma branch segura. Cada item mostra o que aconteceu e não altera a sua branch atual.</p>
@@ -347,7 +317,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       v = String(value);
     } else if (key === 'defaultAction' && ['ask', 'commit', 'commitAndPush'].includes(String(value))) {
       v = String(value);
-    } else if (key === 'askBranch') {
+    } else if (key === 'askBranch' || key === 'animations') {
       v = value === true;
     } else if (key === 'messageMaxLength') {
       const n = Math.floor(Number(value));
@@ -386,7 +356,7 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       return;
     }
     const c = vscode.workspace.getConfiguration('quickGitCommit');
-    for (const k of ['language', 'commitTypes', 'messageMaxLength', 'askBranch', 'defaultAction']) {
+    for (const k of ['language', 'commitTypes', 'messageMaxLength', 'askBranch', 'defaultAction', 'animations']) {
       await c.update(k, undefined, vscode.ConfigurationTarget.Global);
     }
     this.toast('Configurações restauradas ✔');
@@ -411,6 +381,32 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       await this.doStage(r, paths, true);
       this.toast('Arquivo marcado para o commit ✔');
     });
+  }
+
+  private aiData: unknown;
+
+  /** Abre o painel do Quick Git direto na aba IA. */
+  async focusAi(): Promise<void> {
+    await vscode.commands.executeCommand('workbench.view.extension.quickGitCommit');
+    this.post({ type: 'aiFocus' });
+  }
+
+  /** Chamado pelo AI Guard a cada revisão: guarda e envia para a aba "Revisão IA". */
+  setAiReview(data: unknown): void {
+    this.aiData = data;
+    this.post({ type: 'aiReview', data });
+  }
+
+  private async aiOpen(root: string, file: string, line: number): Promise<void> {
+    if (!(await readStatus(root)).some((f) => f.path === file)) {
+      return;
+    }
+    const abs = path.join(root, file);
+    if (!fs.existsSync(abs)) {
+      return;
+    }
+    const l = Number.isInteger(line) && line > 0 ? line - 1 : 0;
+    await vscode.window.showTextDocument(vscode.Uri.file(abs), { selection: new vscode.Range(l, 0, l, 0) });
   }
 
   private post(message: Payload): void {
@@ -534,6 +530,9 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
   private async onMessage(msg: Payload): Promise<void> {
     if (msg.type === 'ready') {
       this.post({ type: 'update', update: getAvailableUpdate() });
+      if (this.aiData) {
+        this.post({ type: 'aiReview', data: this.aiData });
+      }
       await this.refresh(true);
       return;
     }
@@ -669,6 +668,33 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       case 'ob.openFolder':
         void vscode.commands.executeCommand('workbench.action.files.openFolder');
         break;
+      case 'aiScan':
+        void vscode.commands.executeCommand('quickGitCommit.aiScan');
+        break;
+      case 'aiUndo':
+        void vscode.commands.executeCommand('quickGitCommit.aiUndo');
+        break;
+      case 'aiSetup':
+        void vscode.commands.executeCommand('quickGitCommit.aiSetup');
+        break;
+      case 'aiCommit':
+        void vscode.commands.executeCommand('quickGitCommit.run');
+        break;
+      case 'aiOpen':
+        void this.getRoot().then((r) => (r ? this.aiOpen(r, String(p.file ?? ''), Number(p.line)) : undefined));
+        break;
+      case 'aiDiff':
+        void this.getRoot().then((r) => (r ? this.openDiff(r, String(p.file ?? '')) : undefined));
+        break;
+      case 'rpSave':
+        void this.enqueue('Salvando ponto de restauração...', (r) => this.doRestorePointSave(r));
+        break;
+      case 'rpRestore':
+        void this.enqueue('Voltando ao ponto de restauração...', (r) => this.doRestorePointRestore(r, String(p.hash ?? '')));
+        break;
+      case 'rpDelete':
+        void this.enqueue('Excluindo ponto de restauração...', (r) => this.doRestorePointDelete(r, String(p.hash ?? '')));
+        break;
       case 'stashSave':
         void this.enqueue('Guardando alterações...', (r) => this.doStashSave(r));
         break;
@@ -762,6 +788,11 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       remotes = [added];
     }
     const remote = remotes.includes('origin') ? 'origin' : remotes[0];
+
+    if (!(await gitOk(root, ['rev-parse', '--verify', '-q', 'HEAD']))) {
+      this.toast('Ainda não há nenhum commit para enviar. Salve um commit primeiro e depois clique em Enviar.');
+      return;
+    }
 
     if (!sync0.upstream) {
       await git(root, ['push', '-u', remote, sync0.branch]);
@@ -1100,18 +1131,35 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       return;
     }
     const isNew = entry.kind === 'untracked' || entry.index === 'A';
+    const autoPoint = vscode.workspace.getConfiguration('quickGitCommit').get<boolean>('autoRestorePoint', true);
+    const safety = 'Antes disso salvamos um ponto de restauração automático, então dá para voltar em "Pontos de restauração".';
     const pick = await ui.warn(
       `Descartar as alterações de "${entry.path}"?`,
       {
         modal: true,
         detail: isNew
-          ? 'Este arquivo é novo: ele será APAGADO do seu computador. Não dá para recuperar.'
-          : 'Tudo o que você mudou neste arquivo será desfeito e ele volta ao último commit. Não dá para recuperar.',
+          ? `Este arquivo é novo: ele será APAGADO do seu computador. ${autoPoint ? safety : 'Não dá para recuperar.'}`
+          : `Tudo o que você mudou neste arquivo será desfeito e ele volta ao último commit. ${autoPoint ? safety : 'Não dá para recuperar.'}`,
       },
       'Descartar'
     );
     if (pick !== 'Descartar') {
       return;
+    }
+    if (autoPoint) {
+      try {
+        await createRestorePoint(root, `Antes de descartar "${entry.path}"`, true);
+      } catch (e) {
+        this.output.appendLine(`Não foi possível salvar o ponto de restauração: ${e instanceof Error ? e.message : String(e)}`);
+        const again = await ui.warn(
+          'Não consegui salvar o ponto de restauração automático. Descartar mesmo assim? Não dá para recuperar.',
+          { modal: true },
+          'Descartar mesmo assim'
+        );
+        if (again !== 'Descartar mesmo assim') {
+          return;
+        }
+      }
     }
     if (entry.kind === 'untracked') {
       await git(root, ['clean', '-f', '--', entry.path]);
@@ -1189,6 +1237,9 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
     const files = await readStatus(root);
     if (!files.some((f) => f.staged && !f.conflict)) {
       throw new Error('Marque pelo menos um arquivo para incluir no commit.');
+    }
+    if (!(await confirmSafeToCommit(root, false))) {
+      return;
     }
     const subject = `${type}${scope ? `(${scope})` : ''}: ${message}`;
     const args = ['commit', '-m', subject];
@@ -1616,6 +1667,78 @@ export class QuickGitViewProvider implements vscode.WebviewViewProvider, vscode.
       await git(root, ['push', '-u', 'origin', branch]);
       this.toast(`Repositório criado e enviado: ${created.html_url} ✔`);
     } else this.toast('Repositório criado e conectado ✔');
+  }
+
+  private async doRestorePointSave(root: string): Promise<void> {
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const name = await ui.input({
+      title: 'Salvar ponto de restauração',
+      prompt: 'Dê um nome para lembrar deste momento (opcional)',
+      placeHolder: 'ex.: antes de pedir para a IA refatorar',
+      ignoreFocusOut: true,
+    });
+    if (name === undefined) {
+      return;
+    }
+    await createRestorePoint(root, name.trim() || `Ponto de restauração ${hhmm}`, false);
+    this.toast('Ponto de restauração salvo ✔');
+  }
+
+  private async doRestorePointRestore(root: string, hash: string): Promise<void> {
+    const state = await readState(root);
+    if (state.operation !== 'none') {
+      throw new Error('Termine ou cancele a atualização em andamento antes de voltar a um ponto de restauração.');
+    }
+    const point = state.restorePoints.find((x) => x.hash === hash);
+    if (!point) {
+      throw new Error('Ponto de restauração não encontrado. Atualize o painel.');
+    }
+
+    const since = await commitsSincePoint(root, point);
+    const when = new Date(point.date * 1000).toLocaleString();
+    const lines = [
+      `Os seus arquivos voltam exatamente ao que eram neste ponto (${when}). Arquivos criados depois serão apagados e mudanças feitas depois serão desfeitas. Antes disso, o estado atual é salvo automaticamente como um novo ponto, então dá para desfazer.`,
+    ];
+    const buttons = ['Voltar os arquivos'];
+    if (since > 0) {
+      lines.push(
+        since === 1
+          ? 'Depois deste ponto foi feito 1 commit. Se quiser, volte também esse commit: ele continua guardado em "Recuperação".'
+          : `Depois deste ponto foram feitos ${since} commits. Se quiser, volte também esses commits: eles continuam guardados em "Recuperação".`
+      );
+      if (state.upstream && since > state.ahead) {
+        lines.push('Alguns desses commits já foram enviados para a nuvem, então a nuvem ficará diferente da sua branch.');
+      }
+      buttons.push('Voltar arquivos e commits');
+    } else if (point.head && point.branch && state.branch && point.branch !== state.branch) {
+      lines.push(`Este ponto foi salvo na branch "${point.branch}" e você está em "${state.branch}". Só os arquivos serão restaurados.`);
+    }
+
+    const pick = await ui.warn(`Voltar para "${point.name}"?`, { modal: true, detail: lines.join('\n\n') }, ...buttons);
+    if (!pick) {
+      return;
+    }
+    await createRestorePoint(root, `Antes de voltar para "${point.name}"`, true);
+    await restoreToPoint(root, point, pick === 'Voltar arquivos e commits');
+    this.toast('Voltamos para o ponto de restauração ✔');
+  }
+
+  private async doRestorePointDelete(root: string, hash: string): Promise<void> {
+    const point = (await readState(root)).restorePoints.find((x) => x.hash === hash);
+    if (!point) {
+      throw new Error('Ponto de restauração não encontrado. Atualize o painel.');
+    }
+    const ok = await ui.warn(
+      'Excluir este ponto de restauração?',
+      { modal: true, detail: 'Os arquivos guardados nele serão apagados do histórico interno. Os seus arquivos atuais não mudam.' },
+      'Excluir ponto'
+    );
+    if (ok !== 'Excluir ponto') {
+      return;
+    }
+    await deleteRestorePoint(root, point);
+    this.toast('Ponto de restauração excluído ✔');
   }
 
   private async doStashSave(root: string): Promise<void> {

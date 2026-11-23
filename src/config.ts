@@ -46,5 +46,6 @@ export function settingsPayload() {
     maxLen: c.maxLen,
     askBranch: c.askBranch,
     defaultAction: c.defaultAction,
+    animations: vscode.workspace.getConfiguration('quickGitCommit').get<boolean>('animations', true),
   };
 }

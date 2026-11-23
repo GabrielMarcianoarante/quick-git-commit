@@ -10,3 +10,4 @@ CONTRIBUTING.md
 **/*.map
 **/*.ts
 !**/*.d.ts
+tests/**

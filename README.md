@@ -30,6 +30,8 @@ Ela foi pensada para dois públicos ao mesmo tempo:
 - **Quem está começando.** Cada ação usa linguagem simples ("trazer novidades da nuvem" em vez de `git pull`), explica o que vai acontecer e pede confirmação antes de qualquer coisa arriscada.
 - **Quem já usa Git todos os dias.** Menos digitação, commits padronizados em poucos cliques e o estado do repositório sempre visível, sem sair do editor.
 
+E se você programa com ajuda de uma IA, o Quick Git Commit é a sua **rede de segurança**: salve um ponto de restauração antes de deixar a IA mexer no projeto, confira o que mudou antes de commitar e volte atrás com um clique se algo der errado.
+
 ## Funcionalidades
 
 ### Painel Git na barra lateral
@@ -77,13 +79,11 @@ Ao abrir o painel pela primeira vez, o guia leva você por cinco passos: Git ins
 | **Editar último commit** | Corrige a mensagem ou inclui um arquivo esquecido no commit mais recente. |
 | **Reverter commit** | Ao abrir um commit no histórico, cria um commit novo que desfaz as mudanças dele. Nada é apagado, então é seguro mesmo se já foi enviado. |
 | **Copiar para esta branch** | Cherry-pick: leva só as mudanças de um commit (por exemplo, de outra branch) para a branch atual. |
+| **Pontos de restauração** | Salva uma foto dos seus arquivos (inclusive os novos) e volta a ela com um clique. Ideal antes de uma IA mexer no projeto. Também é salvo automaticamente antes de descartar alterações. |
 | **Stashes** | Guarda alterações temporariamente e permite recuperá-las depois, com nome para facilitar. |
 | **Recuperação** | Lista os últimos movimentos do HEAD (reflog) e cria uma branch segura em qualquer ponto perdido. |
 | **Escopo no commit** | Campo opcional para commits como `feat(login): ...`, com sugestões automáticas. |
-| **Branches** | Trocar de branch (inclusive as que só existem na nuvem) e criar uma nova direto no topo do painel. |
-| **Gerenciar branches** | Seção própria para renomear, apagar (avisa se há commits não mesclados) e limpar de uma vez as branches já mescladas. |
-| **Pull Request** | Abre o Pull Request (GitHub) ou Merge Request (GitLab) direto do painel, com a branch de origem e o destino que você escolher. |
-| **Aviso de atualização** | A cada abertura do VS Code a extensão procura versão nova e mostra um aviso no topo do painel, com **Baixar atualização**. |
+| **Branches** | Trocar de branch e criar uma nova direto no topo do painel. |
 
 ### Resolução de conflitos guiada
 
@@ -99,6 +99,31 @@ Quando não houver mais conflitos, use `Continuar`. `Cancelar tudo` sempre devol
 <p align="center">
   <img src="docs/images/panel-conflict.png" alt="Painel mostrando uma atualização pausada por conflitos" width="320">
 </p>
+
+### AI Guard: a segunda chave para quem usa IA
+
+A IA escreve o código; a extensão garante que um humano olhe o que importa antes de publicar. Quando a IA termina de mexer no projeto, o Quick Git mostra os riscos (segredos, `.env`, CI, comandos perigosos, testes apagados) e oferece **revisar**, **commitar** ou **desfazer tudo**. Para o aviso ser exato, rode `Quick Git: Ligar a IA à revisão` e cole o trecho no Claude Code ou no Codex; sem isso, o monitor de arquivos já avisa quando há risco. A conferência é **imediata**: a cada arquivo novo ou alterado, em poucos segundos, aparece um aviso na tela se houver um risco grave novo (sem repetir o mesmo aviso). O painel é dividido em abas (**Trabalho**, **Histórico**, **IA** e **Recuperar**), e a aba IA ganha um selo vermelho quando há riscos. Tudo roda local. Detalhes em `quickGitCommit.aiGuard.*`.
+
+O painel tem animações suaves; se preferir algo mais leve, desligue em **Configurações > Aparência > Animações** (modo leve). Ele também respeita o "reduzir movimento" do sistema.
+
+<p align="center">
+  <img src="docs/images/panel-tabs.png" alt="Painel dividido em abas, com a aba IA e o selo de riscos" width="320">
+  <img src="docs/images/panel-ai-review.png" alt="Aba Revisão IA listando segredos, .env e comandos perigosos encontrados nas mudanças da IA" width="320">
+  <img src="docs/images/panel-ai-clean.png" alt="Aba Revisão IA sem riscos encontrados, com os botões Desfazer e Tudo certo" width="320">
+</p>
+
+### Pontos de restauração: o botão de desfazer do seu projeto
+
+Vai pedir para uma IA refatorar o projeto, ou fazer uma mudança grande por conta própria? Antes, clique em **Salvar ponto de restauração**. A extensão guarda uma "foto" dos seus arquivos (os alterados e os novos, respeitando o `.gitignore`) sem mexer em nada: nem nos arquivos, nem na branch, nem no que você marcou para o commit.
+
+Se algo der errado, clique em **Voltar para este ponto**:
+
+- Os arquivos alterados voltam ao que eram, os apagados reaparecem e os arquivos criados depois são removidos.
+- Antes de voltar, o estado atual é salvo automaticamente como um novo ponto, então dá para desfazer a própria volta.
+- Se você fez commits depois do ponto, pode voltar também esses commits. Eles continuam guardados em **Recuperação**.
+- Antes de **Descartar** as alterações de um arquivo, um ponto automático é salvo, então descartar deixa de ser definitivo. Dá para desligar em `quickGitCommit.autoRestorePoint`.
+
+Os pontos ficam só no seu computador (dentro da pasta `.git`) e nunca são enviados para a nuvem. A extensão guarda os 20 mais recentes.
 
 ### Stashes: guardar e recuperar alterações
 
@@ -120,20 +145,6 @@ Abra um commit no histórico para ver dois botões, sempre com a explicação do
 - **Copiar para esta branch** (`git cherry-pick`): leva só as mudanças de um commit, por exemplo de outra branch, para a branch atual, sem trazer o resto.
 
 Se aparecer conflito, o painel conduz a resolução (`Continuar` e `Cancelar tudo`). Antes de começar, a extensão pede que não haja alterações não salvas (use **Guardar alterações** se precisar).
-
-### Gerenciar branches
-
-A seção **Branches** lista as suas branches, cada uma com botões para **renomear**, **abrir Pull Request** e **apagar**. **Limpar mescladas** apaga de uma vez as branches já mescladas na principal (`main`, `master`, `develop`, `dev` e `trunk` e a branch atual nunca entram). Tudo pede confirmação, e apagar uma branch com commits ainda não mesclados mostra um aviso claro (dá para recuperar pela seção **Recuperação**).
-
-O seletor de branch do topo também lista as branches que só existem na nuvem, por exemplo as criadas por outra pessoa. Ao escolher uma, a extensão cria a cópia local ligada a ela. Em situações de empresa (branch protegida, acesso negado, repositório sem acesso), as mensagens explicam o que fazer.
-
-### Abrir Pull Request
-
-Clique em **Abrir Pull Request** para abrir no navegador a página de comparação do **GitHub** ou o novo Merge Request do **GitLab** (inclusive instalações próprias que tenham "gitlab" no endereço). Você escolhe a branch de destino numa lista (a principal vem primeiro), e a extensão avisa se a sua branch ainda não foi enviada para a nuvem.
-
-### Aviso de atualização
-
-A cada vez que o VS Code abre, a extensão confere se há uma versão mais nova. Quando há, aparece um aviso no topo do painel com **Baixar atualização** e **Ignorar** (esconde só aquela versão).
 
 ### Escopo no commit
 
@@ -167,10 +178,7 @@ O botão **Quick Commit** na barra inferior abre um fluxo guiado por menus, idea
 - O painel **nunca fica esperando senha no terminal**. Se faltar login, ele avisa o que fazer.
 - Erros do Git são traduzidos para mensagens claras. Os detalhes técnicos ficam em **Ver > Saída > Quick Git Commit**.
 - Se o GitHub recusar um envio por falta de permissão (por exemplo, ao enviar arquivos em `.github/workflows`), a extensão explica o motivo e oferece **Autorizar e tentar de novo**, sem precisar sair do painel.
-- Os comandos `git` rodam localmente, via `execFile` com lista de argumentos (sem shell). A extensão não envia dados para nenhum serviço próprio. A única consulta de rede automática é a verificação de nova versão, uma requisição anônima à API pública de releases do GitHub (a cada abertura do VS Code), que não envia nenhuma informação sua e pode ser desativada.
-- Nomes de branch e hashes vindos do painel são validados e nunca começam com `-` (sem injeção de opções do Git). Credenciais embutidas em URLs são mascaradas em logs e mensagens.
-- A extensão exige **Workspace Trust**: não roda em pastas não confiáveis, onde hooks e configurações do repositório poderiam executar código.
-- Detalhes e como relatar uma vulnerabilidade em [SECURITY.md](SECURITY.md).
+- Os comandos `git` rodam localmente, via `execFile` com lista de argumentos (sem shell). A extensão não envia dados para nenhum serviço próprio. A única consulta de rede automática é a verificação de nova versão, uma requisição anônima à API pública de releases do GitHub (no máximo uma vez por dia), que não envia nenhuma informação sua e pode ser desativada.
 - O login do GitHub usa o sistema de contas do próprio VS Code. O token fica com o VS Code, é entregue ao Git apenas em memória e somente para endereços `github.com`, e nunca é gravado em arquivos nem em logs.
 
 ## Requisitos
@@ -200,7 +208,7 @@ Abra a pasta no VS Code e pressione **F5** (configuração "Executar extensão")
 
 Também funciona pelo terminal: `code --install-extension quick-git-commit-X.Y.Z.vsix`.
 
-**Atualizações:** quando sai uma versão nova, a extensão mostra um aviso com o botão **Baixar atualização**, que abre a página da release. Basta baixar o novo `.vsix` e instalar do mesmo jeito (ele substitui a versão antiga). A checagem acontece a cada abertura do VS Code, o aviso aparece no topo do painel e a checagem pode ser desligada em `quickGitCommit.checkForUpdates`. Para conferir na hora, use o comando **Quick Git: Verificar atualizações**.
+**Atualizações:** quando sai uma versão nova, a extensão mostra um aviso com o botão **Baixar atualização**, que abre a página da release. Basta baixar o novo `.vsix` e instalar do mesmo jeito (ele substitui a versão antiga). A checagem acontece no máximo uma vez por dia e pode ser desligada em `quickGitCommit.checkForUpdates`. Para conferir na hora, use o comando **Quick Git: Verificar atualizações**.
 
 ### Gerando o .vsix você mesmo
 
@@ -247,7 +255,8 @@ Clique com o botão direito em um arquivo (Explorer ou editor) para **Marcar arq
 | `quickGitCommit.messageMaxLength` | `72` | Limite da mensagem, sem o prefixo (`0` = sem limite) |
 | `quickGitCommit.askBranch` | `true` | Perguntar pela branch no commit rápido |
 | `quickGitCommit.defaultAction` | `ask` | `ask`, `commit` ou `commitAndPush` |
-| `quickGitCommit.checkForUpdates` | `true` | Procurar versão nova no GitHub a cada abertura do VS Code e avisar no painel |
+| `quickGitCommit.autoRestorePoint` | `true` | Salvar um ponto de restauração automático antes de descartar alterações |
+| `quickGitCommit.checkForUpdates` | `true` | Avisar (no máximo 1 vez por dia) quando houver versão nova no GitHub |
 
 Tudo isso também pode ser ajustado dentro do painel, na engrenagem no topo (idioma, prefixos, limite e ação padrão), sem abrir o `settings.json`.
 
@@ -268,6 +277,7 @@ O objetivo é tornar o Quick Git Commit a forma mais fácil de usar Git dentro d
 - [x] Desfazer último commit mantendo as alterações
 - [x] Editar o último commit (amend): corrigir a mensagem ou incluir um arquivo esquecido
 - [x] Reverter commit (revert) e cherry-pick com explicação simples
+- [x] Pontos de restauração: salvar uma foto dos arquivos e voltar a ela com um clique
 - [x] Stash visual: guardar alterações temporariamente e recuperá-las depois
 - [x] Recuperação de commits e branches perdidos (reflog) com um clique
 - [x] Escopo no commit, como `feat(login): ...`, com sugestão de escopos
@@ -277,10 +287,7 @@ O objetivo é tornar o Quick Git Commit a forma mais fácil de usar Git dentro d
 - [x] Modo Simples e Avançado
 - [x] Detalhes do commit: arquivos alterados e diferenças
 - [x] Gráfico de branches com ramificações e junções
-- [x] Aviso de nova versão no topo do painel, a cada abertura do VS Code, com link para download
-- [x] Gerenciar branches: renomear, apagar e limpar as já mescladas
-- [x] Abrir Pull Request no GitHub e GitLab direto do painel
-- [x] Endurecimento de segurança (Workspace Trust, validação de argumentos, credenciais mascaradas)
+- [x] Aviso de nova versão com link para download
 - [x] Releases no GitHub com o `.vsix` para baixar só a extensão
 - [x] Autorização da permissão `workflow` do GitHub direto na extensão, quando o envio exige
 - [x] Atalhos de teclado e ações no menu de contexto
@@ -295,6 +302,8 @@ O objetivo é tornar o Quick Git Commit a forma mais fácil de usar Git dentro d
 **Em seguida: funções essenciais**
 
 - [ ] Tags e releases: criar e enviar versões como `v1.0.0`
+- [ ] Gerenciar branches: renomear, apagar e limpar as já mescladas
+- [ ] Abrir Pull Request no GitHub e GitLab direto do painel
 - [ ] Busca no histórico por mensagem, autor, arquivo ou data
 - [ ] Sugestão opcional de mensagem de commit a partir das alterações
 - [ ] Gitmoji opcional nos commits
@@ -316,7 +325,7 @@ quick-git-commit/
 │   ├── panel.ts         Painel lateral (webview) e ações
 │   ├── quickCommit.ts   Fluxo rápido de commit por menus
 │   ├── githubScope.ts   Autorização de permissões extras do GitHub (workflow)
-│   ├── updateCheck.ts   Aviso de nova versão (banner no painel) pelas releases do GitHub
+│   ├── updateCheck.ts   Aviso de nova versão pelas releases do GitHub
 │   ├── config.ts        Leitura das configurações da extensão
 │   └── i18n.ts          Idioma (português e inglês)
 ├── media/
@@ -330,7 +339,6 @@ quick-git-commit/
 ├── resources/           Ícones da extensão
 ├── docs/images/         Imagens usadas neste README
 ├── CHANGELOG.md         Novidades de cada versão
-├── SECURITY.md          Práticas de segurança e como relatar vulnerabilidades
 └── package.json
 ```
 

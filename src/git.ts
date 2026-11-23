@@ -41,6 +41,8 @@ export class GitError extends Error {
 interface RunOptions {
   /** Não faz trim na saída (necessário para parsear saídas com -z). */
   raw?: boolean;
+  /** Variáveis de ambiente extras para este comando (ex.: GIT_INDEX_FILE). */
+  env?: Record<string, string>;
 }
 
 export async function git(cwd: string, args: string[], options: RunOptions = {}): Promise<string> {
@@ -62,6 +64,7 @@ export async function git(cwd: string, args: string[], options: RunOptions = {})
           LANGUAGE: 'en',
           LC_MESSAGES: 'C',
           ...extra,
+          ...options.env,
         },
       },
       (error, stdout, stderr) => {
@@ -193,6 +196,7 @@ export interface RepoState extends SyncInfo {
   conflicts: string[];
   stashes: StashInfo[];
   reflog: ReflogInfo[];
+  restorePoints: RestorePointInfo[];
   branches: { local: string[]; remote: string[] };
   history: CommitInfo[];
   headHash: string;
@@ -432,7 +436,7 @@ export async function readCommitDetails(root: string, hash: string): Promise<Com
 }
 
 export async function readState(root: string): Promise<RepoState> {
-  const [sync, statusRaw, remoteList, branches, operation, hasCommits, stashes, reflog] = await Promise.all([
+  const [sync, statusRaw, remoteList, branches, operation, hasCommits, stashes, reflog, restorePoints] = await Promise.all([
     getSync(root),
     git(root, ['status', '--porcelain=v1', '-z', '-uall'], { raw: true }),
     git(root, ['remote']),
@@ -441,6 +445,7 @@ export async function readState(root: string): Promise<RepoState> {
     gitOk(root, ['rev-parse', '--verify', '-q', 'HEAD']),
     readStashes(root),
     readReflog(root),
+    readRestorePoints(root),
   ]);
 
   const files = parseStatus(statusRaw);
@@ -465,6 +470,7 @@ export async function readState(root: string): Promise<RepoState> {
     conflicts: files.filter((f) => f.conflict).map((f) => f.path),
     stashes,
     reflog,
+    restorePoints,
     branches,
     history,
     headHash,
@@ -509,5 +515,202 @@ export async function readReflog(root: string): Promise<ReflogInfo[]> {
       });
   } catch {
     return [];
+  }
+}
+
+
+// ---------- Pontos de restauração ----------
+// Uma "foto" da pasta de trabalho (arquivos alterados e novos, respeitando o .gitignore) guardada como um commit
+// interno em refs/quickgit/restore/*. Não mexe no índice, nos arquivos nem na branch, e nunca é enviada para a nuvem.
+
+export interface RestorePointInfo {
+  ref: string;
+  hash: string;
+  name: string;
+  /** Segundos desde 1970. */
+  date: number;
+  auto: boolean;
+  branch: string;
+  /** Commit em que a branch estava quando o ponto foi salvo (vazio se ainda não havia commits). */
+  head: string;
+  files: number;
+}
+
+const RP_PREFIX = 'refs/quickgit/restore/';
+const RP_KEEP = 20;
+const RP_IDENTITY = {
+  GIT_AUTHOR_NAME: 'Quick Git Commit',
+  GIT_AUTHOR_EMAIL: 'restore-point@quick-git-commit.local',
+  GIT_COMMITTER_NAME: 'Quick Git Commit',
+  GIT_COMMITTER_EMAIL: 'restore-point@quick-git-commit.local',
+};
+
+/** Fotografa a pasta de trabalho usando um índice temporário (o índice real não é tocado). */
+async function snapshotTree(root: string): Promise<{ tree: string; files: number; head: string }> {
+  const gitDir = await git(root, ['rev-parse', '--absolute-git-dir']);
+  const indexFile = path.join(gitDir, `qgc-snapshot-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const env = { GIT_INDEX_FILE: indexFile };
+  const head = (await gitOk(root, ['rev-parse', '--verify', '-q', 'HEAD'])) ? await git(root, ['rev-parse', 'HEAD']) : '';
+  try {
+    if (head) {
+      await git(root, ['read-tree', 'HEAD'], { env });
+    }
+    await git(root, ['add', '-A'], { env });
+    const tree = await git(root, ['write-tree'], { env });
+    const changed = head
+      ? await git(root, ['diff', '--cached', '--name-only', '-z', head], { env, raw: true })
+      : await git(root, ['ls-files', '-z'], { env, raw: true });
+    return { tree, files: changed.split('\0').filter(Boolean).length, head };
+  } finally {
+    try {
+      fs.rmSync(indexFile, { force: true });
+    } catch {
+      /* arquivo temporário: se não der para apagar agora, não atrapalha */
+    }
+  }
+}
+
+export async function readRestorePoints(root: string): Promise<RestorePointInfo[]> {
+  try {
+    const out = await git(
+      root,
+      ['for-each-ref', '--sort=-refname', '--format=%(refname)%1f%(objectname)%1f%(creatordate:unix)%1f%(contents:subject)%1f%(contents:body)%1e', RP_PREFIX],
+      { raw: true }
+    );
+    return out
+      .split('\x1e')
+      .map((rec) => rec.replace(/^\n+/, ''))
+      .filter((rec) => rec.trim() !== '')
+      .map((rec) => {
+        const [ref, hash, date, name, body] = rec.split('\x1f');
+        const meta: Record<string, string> = {};
+        for (const line of (body || '').split('\n')) {
+          const m = /^(branch|head|auto|files):\s*(.*)$/.exec(line.trim());
+          if (m) {
+            meta[m[1]] = m[2];
+          }
+        }
+        return {
+          ref: ref || '',
+          hash: hash || '',
+          name: name || 'Ponto de restauração',
+          date: Number(date) || 0,
+          auto: meta.auto === '1',
+          branch: meta.branch || '',
+          head: meta.head || '',
+          files: Number(meta.files) || 0,
+        };
+      })
+      .filter((p) => p.ref.startsWith(RP_PREFIX) && isHash(p.hash));
+  } catch {
+    return [];
+  }
+}
+
+/** Salva um ponto de restauração. Guarda os 20 mais recentes e apaga os mais antigos. */
+export async function createRestorePoint(root: string, name: string, auto: boolean): Promise<RestorePointInfo> {
+  const { tree, files, head } = await snapshotTree(root);
+  const branch = await git(root, ['branch', '--show-current']).catch(() => '');
+  const title = name.replace(/[\r\n]+/g, ' ').trim().slice(0, 120) || 'Ponto de restauração';
+  const args = ['commit-tree', tree, ...(head ? ['-p', head] : []), '-m', title, '-m', 'qgc-restore-point', '-m', `branch: ${branch}`, '-m', `head: ${head}`, '-m', `auto: ${auto ? 1 : 0}`, '-m', `files: ${files}`];
+  const hash = await git(root, args, { env: RP_IDENTITY });
+  const ref = `${RP_PREFIX}${Date.now()}-${hash.slice(0, 7)}`;
+  await git(root, ['update-ref', ref, hash]);
+  const all = await readRestorePoints(root);
+  for (const old of all.slice(RP_KEEP)) {
+    await git(root, ['update-ref', '-d', old.ref]).catch(() => undefined);
+  }
+  return { ref, hash, name: title, date: Math.floor(Date.now() / 1000), auto, branch, head, files };
+}
+
+export async function deleteRestorePoint(root: string, point: RestorePointInfo): Promise<void> {
+  if (!point.ref.startsWith(RP_PREFIX)) {
+    throw new Error('Ponto de restauração inválido.');
+  }
+  await git(root, ['update-ref', '-d', point.ref]);
+}
+
+/** Quantos commits foram feitos depois do ponto, na mesma branch (0 se não dá para voltá-los com segurança). */
+export async function commitsSincePoint(root: string, point: RestorePointInfo): Promise<number> {
+  if (!point.head || !isHash(point.head)) {
+    return 0;
+  }
+  const current = await git(root, ['branch', '--show-current']).catch(() => '');
+  if (!current || current !== point.branch) {
+    return 0;
+  }
+  if (!(await gitOk(root, ['merge-base', '--is-ancestor', point.head, 'HEAD']))) {
+    return 0;
+  }
+  return Number(await git(root, ['rev-list', '--count', `${point.head}..HEAD`])) || 0;
+}
+
+function chunkByLength(items: string[], maxChars: number): string[][] {
+  const chunks: string[][] = [];
+  let cur: string[] = [];
+  let len = 0;
+  for (const item of items) {
+    if (cur.length && len + item.length > maxChars) {
+      chunks.push(cur);
+      cur = [];
+      len = 0;
+    }
+    cur.push(item);
+    len += item.length + 1;
+  }
+  if (cur.length) {
+    chunks.push(cur);
+  }
+  return chunks;
+}
+
+/**
+ * Deixa a pasta de trabalho exatamente como no ponto: restaura arquivos alterados/apagados e apaga os criados depois.
+ * Com `moveBranch`, a branch também volta ao commit em que estava (os commits novos continuam em "Recuperação").
+ */
+export async function restoreToPoint(root: string, point: RestorePointInfo, moveBranch: boolean): Promise<void> {
+  const { tree: current } = await snapshotTree(root);
+  const target = await git(root, ['rev-parse', `${point.hash}^{tree}`]);
+  const diff = await git(root, ['diff-tree', '-r', '--name-status', '--no-renames', '-z', current, target], { raw: true });
+  const parts = diff.split('\0').filter((x) => x !== '');
+  const toWrite: string[] = [];
+  const toDelete: string[] = [];
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    (parts[i][0] === 'D' ? toDelete : toWrite).push(parts[i + 1]);
+  }
+
+  const base = path.resolve(root);
+  let failed = 0;
+  for (const rel of toDelete) {
+    const abs = path.resolve(base, rel);
+    if (!abs.startsWith(base + path.sep)) {
+      continue;
+    }
+    try {
+      fs.rmSync(abs, { force: true });
+      let dir = path.dirname(abs);
+      while (dir.startsWith(base + path.sep)) {
+        try {
+          fs.rmdirSync(dir); // só remove pastas que ficaram vazias
+        } catch {
+          break;
+        }
+        dir = path.dirname(dir);
+      }
+    } catch {
+      failed++;
+    }
+  }
+  for (const chunk of chunkByLength(toWrite, 6000)) {
+    await git(root, ['--literal-pathspecs', 'restore', `--source=${point.hash}`, '--worktree', '--', ...chunk]);
+  }
+
+  if (moveBranch && point.head && isHash(point.head)) {
+    await git(root, ['reset', '-q', '--mixed', point.head]);
+  } else {
+    await git(root, ['reset', '-q']).catch(() => undefined);
+  }
+  if (failed > 0) {
+    throw new Error(`Não consegui apagar ${failed} arquivo(s) criado(s) depois do ponto. Feche programas que estejam usando esses arquivos e tente de novo.`);
   }
 }

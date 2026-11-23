@@ -1,16 +1,11 @@
 import * as vscode from 'vscode';
 import { ui } from './i18n';
+import { friendly, isMissingWorkflowScope } from './errors';
 
 const BASE_SCOPES = ['repo'];
 const WORKFLOW_SCOPES = ['repo', 'workflow'];
 
-/**
- * O GitHub recusa o envio de arquivos em .github/workflows quando o login não tem a permissão "workflow":
- * "refusing to allow an OAuth App to create or update workflow `...` without `workflow` scope".
- */
-export function isMissingWorkflowScope(raw: string): boolean {
-  return /without\s+[`'"]?workflow[`'"]?\s+scope/i.test(raw);
-}
+export { isMissingWorkflowScope };
 
 /** Sessão do GitHub a entregar ao Git. Prefere a que já tem "workflow" (se o usuário autorizou antes). */
 export async function getGithubSessionForGit(): Promise<vscode.AuthenticationSession | undefined> {
@@ -65,7 +60,7 @@ export async function resolveMissingWorkflowScope(retry: () => Promise<void>, sh
     return true;
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e);
-    await ui.error(`Quick Git: ${raw.trim().split('\n').slice(0, 4).join('\n')}`);
+    await ui.error(`Quick Git: ${friendly(raw)}`);
     return false;
   }
 }

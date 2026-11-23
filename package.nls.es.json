@@ -2,5 +2,14 @@
   "command.quickCommit": "Quick Git: Hacer commit rápido",
   "command.openPanel": "Quick Git: Abrir panel",
   "command.refresh": "Quick Git: Actualizar panel",
-  "command.guide": "Quick Git: Abrir guía inicial"
+  "command.guide": "Quick Git: Abrir guía inicial",
+  "cmd.aiReview": "Quick Git: Revisar cambios de la IA",
+  "cmd.aiSetup": "Quick Git: Conectar la IA a la revisión",
+  "cfg.aiGuard.enabled": "Vigila el proyecto y avisa cuando una IA cambia archivos con riesgos (secretos, .env, CI, comandos peligrosos).",
+  "cfg.aiGuard.quietSeconds": "Segundos tras el último cambio en archivos para que AI Guard revise riesgos y avise al instante (por defecto 3).",
+  "cfg.aiGuard.commitGate": "Avisa antes del commit cuando los cambios tienen riesgos.",
+  "cfg.aiGuard.commitGate.off": "Nunca avisar",
+  "cfg.aiGuard.commitGate.critical": "Solo riesgos críticos (secretos, claves privadas)",
+  "cfg.aiGuard.commitGate.high": "Riesgos críticos y altos",
+  "cfg.animations": "Animaciones y efectos visuales en el panel de Quick Git. Desactívalas para el modo ligero (más rápido en equipos lentos)."
 }

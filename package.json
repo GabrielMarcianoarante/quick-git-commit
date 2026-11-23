@@ -2,7 +2,7 @@
   "name": "quick-git-commit",
   "displayName": "Quick Git Commit",
   "description": "%ext.description%",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "publisher": "GabrielMarcianoarante",
   "license": "PolyForm-Noncommercial-1.0.0",
   "engines": {
@@ -73,6 +73,15 @@
       {
         "command": "quickGitCommit.checkUpdates",
         "title": "%cmd.checkUpdates%"
+      },
+      {
+        "command": "quickGitCommit.aiReview",
+        "title": "%cmd.aiReview%",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "quickGitCommit.aiSetup",
+        "title": "%cmd.aiSetup%"
       }
     ],
     "menus": {
@@ -117,6 +126,11 @@
           "command": "quickGitCommit.refresh",
           "when": "view == quickGitCommit.panel",
           "group": "navigation@2"
+        },
+        {
+          "command": "quickGitCommit.aiReview",
+          "when": "view == quickGitCommit.panel",
+          "group": "navigation@3"
         }
       ],
       "commandPalette": [
@@ -157,6 +171,11 @@
         "key": "ctrl+alt+g s",
         "mac": "cmd+alt+g s",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "quickGitCommit.aiReview",
+        "key": "ctrl+alt+g a",
+        "mac": "cmd+alt+g a"
       }
     ],
     "configuration": {
@@ -239,6 +258,42 @@
           "type": "boolean",
           "default": true,
           "description": "%cfg.checkForUpdates%"
+        },
+        "quickGitCommit.autoRestorePoint": {
+          "type": "boolean",
+          "default": true,
+          "description": "%cfg.autoRestorePoint%"
+        },
+        "quickGitCommit.aiGuard.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "%cfg.aiGuard.enabled%"
+        },
+        "quickGitCommit.aiGuard.quietSeconds": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 1,
+          "description": "%cfg.aiGuard.quietSeconds%"
+        },
+        "quickGitCommit.aiGuard.commitGate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "critical",
+            "high"
+          ],
+          "enumDescriptions": [
+            "%cfg.aiGuard.commitGate.off%",
+            "%cfg.aiGuard.commitGate.critical%",
+            "%cfg.aiGuard.commitGate.high%"
+          ],
+          "default": "critical",
+          "description": "%cfg.aiGuard.commitGate%"
+        },
+        "quickGitCommit.animations": {
+          "type": "boolean",
+          "default": true,
+          "description": "%cfg.animations%"
         }
       }
     }
@@ -248,7 +303,8 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "vsce package --baseImagesUrl https://raw.githubusercontent.com/GabrielMarcianoarante/quick-git-commit/main/",
-    "publish": "vsce publish --baseImagesUrl https://raw.githubusercontent.com/GabrielMarcianoarante/quick-git-commit/main/"
+    "publish": "vsce publish --baseImagesUrl https://raw.githubusercontent.com/GabrielMarcianoarante/quick-git-commit/main/",
+    "test": "npm run compile && node tests/scanner.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

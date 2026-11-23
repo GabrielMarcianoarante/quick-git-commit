@@ -19,6 +19,7 @@
 
   // ---------- Ícones (SVG inline, sem dependências) ----------
   const ICONS = {
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
     refresh: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
     plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
     download: '<polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/>',
@@ -107,6 +108,7 @@
       secChanges: 'Minhas alterações',
       secUpdate: 'Atualizar minha branch',
       secHistory: 'Histórico',
+      secRestore: 'Pontos de restauração',
       secStashes: 'Stashes',
       secRecovery: 'Recuperar itens perdidos',
       fetch: 'Buscar',
@@ -140,6 +142,7 @@
       secChanges: 'Working tree e index',
       secUpdate: 'rebase · merge',
       secHistory: 'git log --graph',
+      secRestore: 'refs/quickgit/restore',
       secStashes: 'git stash',
       secRecovery: 'git reflog',
       fetch: 'fetch',
@@ -183,8 +186,10 @@
     expanded: saved.expanded || '',
     guide: false,
     settings: saved.settings === true,
+    tab: ['work', 'history', 'ai', 'rescue'].includes(saved.tab) ? saved.tab : 'work',
   };
   let state = null;
+  setTimeout(() => applyMotion(), 0);
   const detailsCache = Object.create(null);
   const save = () => {
     const { guide, ...persist } = ui;
@@ -225,6 +230,8 @@
       render();
     });
     $('btnNewBranch').addEventListener('click', () => post('newBranch'));
+    $('btnRpSave').append(icon('history'));
+    $('btnRpSave').addEventListener('click', () => post('rpSave'));
     $('btnStashSave').append(icon('folder'));
     $('btnStashSave').addEventListener('click', () => post('stashSave'));
 
@@ -387,6 +394,17 @@
       set('askBranch', v);
     });
 
+    const animOn = CFG.animations !== false;
+    const anim = h('button', { id: 'setAnim', class: 'switch' + (animOn ? ' on' : ''), type: 'button', role: 'switch', 'aria-checked': animOn ? 'true' : 'false', 'aria-label': 'Animações' }, h('span', { class: 'knob' }));
+    anim.addEventListener('click', () => {
+      const v = anim.getAttribute('aria-checked') !== 'true';
+      anim.setAttribute('aria-checked', String(v));
+      anim.classList.toggle('on', v);
+      CFG.animations = v;
+      applyMotion();
+      set('animations', v);
+    });
+
     const row = (label, hint, control, o) => {
       o = o || {};
       return h('div', { class: 'setRow' + (o.stack ? ' stack' : '') },
@@ -411,6 +429,8 @@
           { stack: true })),
       group('Commit rápido',
         row('Perguntar pela branch', 'Antes do commit rápido, escolher manter, trocar ou criar uma branch.', ask, { id: 'setAsk' })),
+      group('Aparência',
+        row('Animações', 'Desligue para o modo leve: sem animações e efeitos, mais rápido em computadores mais fracos.', anim, { id: 'setAnim' })),
       h('div', { class: 'setFoot' },
         h('div', { class: 'row' },
           h('button', { class: 'btn secondary grow', type: 'button', text: 'Restaurar padrões', onclick: () => post('resetSettings') }),
@@ -418,6 +438,10 @@
         h('p', { class: 'hint', text: 'As alterações são salvas automaticamente.' }))
     );
     if (focusId && $(focusId)) $(focusId).focus();
+  }
+
+  function applyMotion() {
+    document.body.classList.toggle('lite', CFG.animations === false);
   }
 
   function applySettingsView() {
@@ -432,8 +456,39 @@
     }
   }
 
+  // ---------- Abas ----------
+  const TABS = [
+    { id: 'work', label: 'Trabalho', icon: 'check' },
+    { id: 'history', label: 'Histórico', icon: 'history' },
+    { id: 'ai', label: 'IA', icon: 'shield' },
+    { id: 'rescue', label: 'Recuperar', icon: 'undo' },
+  ];
+  function setTab(id) {
+    ui.tab = id;
+    save();
+    renderTabs();
+  }
+  function renderTabs() {
+    const nav = $('tabs');
+    if (!nav) return;
+    const urgent = aiData ? aiData.findings.filter((f) => f.severity === 'critical' || f.severity === 'high').length : 0;
+    nav.replaceChildren(
+      ...TABS.map((t) =>
+        h(
+          'button',
+          { type: 'button', class: 'tab' + (ui.tab === t.id ? ' active' : ''), role: 'tab', 'aria-selected': String(ui.tab === t.id), onclick: () => setTab(t.id) },
+          icon(t.icon),
+          h('span', { text: t.label }),
+          t.id === 'ai' && urgent ? h('span', { class: 'tabBadge', text: String(urgent) }) : ''
+        )
+      )
+    );
+    document.querySelectorAll('details.section[data-tab]').forEach((d) => d.classList.toggle('tabHidden', d.dataset.tab !== ui.tab));
+  }
+
   function render() {
     if (state) renderMain();
+    renderTabs();
     if (!state || !state.isRepo) $('repoName').textContent = 'Quick Git';
     applySettingsView();
   }
@@ -472,6 +527,8 @@
     renderCommit();
     renderUpdate();
     renderBranches();
+    renderAiReview();
+    renderRestorePoints();
     renderStashes();
     renderReflog();
     renderHistory();
@@ -488,6 +545,7 @@
     setTitle('secChanges', t.secChanges);
     setTitle('secUpdate', t.secUpdate);
     setTitle('secHistory', t.secHistory);
+    setTitle('secRestore', t.secRestore);
     setTitle('secStashes', advanced() ? 'git stash' : 'Stashes');
     setTitle('secRecovery', advanced() ? 'git reflog' : 'Recuperar itens perdidos');
     $('baseLabel').textContent = t.baseLabel;
@@ -729,6 +787,7 @@
       body.append(h('p', { class: 'hint', text: 'Você está fora de uma branch. Escolha uma branch no topo para sincronizar.' }));
       return;
     }
+    const noCommitHint = !s.hasCommits ? h('p', { class: 'hint', text: 'Faça o seu primeiro commit (em "Minhas alterações") para poder enviar.' }) : null;
     if (!s.hasRemote) {
       body.append(
         h('p', { text: 'Este projeto ainda só existe no seu computador. Conecte-o a um repositório online (GitHub, GitLab...) para guardar e compartilhar seu trabalho.' }),
@@ -739,13 +798,15 @@
           btn('Guia', { icon: 'help', onclick: () => { ui.guide = true; render(); } })
         )
       );
+      if (noCommitHint) body.append(noCommitHint);
       return;
     }
     if (!s.upstream) {
       body.append(
         h('p', { text: 'A branch "' + s.branch + '" ainda só existe no seu computador.' }),
-        btn(t.publish, { icon: 'upload', kind: 'primary', mono: advanced(), onclick: () => post('push') })
+        btn(t.publish, { icon: 'upload', kind: 'primary', mono: advanced(), disabled: !s.hasCommits, onclick: () => post('push') })
       );
+      if (noCommitHint) body.append(noCommitHint);
       return;
     }
 
@@ -1113,6 +1174,129 @@
     }
   }
 
+  // ---------- Revisão IA ----------
+  let aiData = null;
+  const SEV_LABEL = { critical: 'Crítico', high: 'Alto', medium: 'Médio', low: 'Baixo' };
+  function renderAiReview() {
+    const list = $('aiList');
+    const bar = $('aiBar');
+    if (!list || !bar) return;
+    const d = aiData;
+    bar.replaceChildren(
+      btn('Revisar agora', { icon: 'refresh', kind: 'primary', grow: true, onclick: () => post('aiScan') }),
+      btn('Desfazer o que a IA fez', { icon: 'undo', small: true, disabled: !d || !d.canUndo, title: 'Volta os arquivos ao ponto salvo antes da IA. O estado atual é salvo antes.', onclick: () => post('aiUndo') })
+    );
+    const badge = $('aiBadge');
+    badge.replaceChildren();
+    list.replaceChildren();
+    if (!d) {
+      list.append(
+        h('div', { class: 'empty' }, icon('shield'), h('span', { text: 'Nenhuma revisão ainda. Clique em "Revisar agora" ou ligue a IA à revisão.' })),
+        btn('Ligar a IA à revisão', { small: true, onclick: () => post('aiSetup') })
+      );
+      return;
+    }
+    const urgent = d.findings.filter((f) => f.severity === 'critical' || f.severity === 'high').length;
+    if (urgent) badge.append(h('span', { class: 'tag danger', text: urgent + ' ⚠' }));
+    else if (d.files.length) badge.append(h('span', { class: 'tag soft', text: String(d.files.length) }));
+    if (!d.files.length) {
+      list.append(h('div', { class: 'empty' }, icon('shield'), h('span', { text: 'Nenhuma mudança para revisar.' })));
+      return;
+    }
+    const when = new Date(d.ts).toLocaleTimeString(undefined, { timeStyle: 'short' });
+    list.append(h('p', { class: 'hint', text: d.agent + ' · ' + d.files.length + ' arquivo(s) · ' + when }));
+    if (!d.findings.length) list.append(h('div', { class: 'empty' }, icon('shield'), h('span', { text: 'Nenhum risco encontrado' })));
+    for (const [i, f] of d.findings.entries()) {
+      const real = d.files.includes(f.file);
+      const label = f.file + (f.line ? ':' + f.line : '');
+      const meta = h('span', { class: 'stashMeta aiMeta' }, h('span', { class: 'tag ' + (f.severity === 'critical' || f.severity === 'high' ? 'danger' : 'soft'), text: SEV_LABEL[f.severity] }), document.createTextNode(' ' + f.message));
+      const info = h('div', { class: 'stashInfo' }, h('span', { class: 'stashName', text: label, title: label }), meta);
+      if (f.snippet) info.append(h('code', { class: 'stashMeta', text: f.snippet }));
+      list.append(
+        h(
+          'div',
+          { class: 'stash', style: '--i:' + Math.min(i, 10) },
+          info,
+          real
+            ? h(
+                'span',
+                { class: 'fileActions' },
+                btn('Abrir', { small: true, kind: 'primary', onclick: () => post('aiOpen', { file: f.file, line: f.line || 1 }) }),
+                btn('Diff', { small: true, onclick: () => post('aiDiff', { file: f.file }) })
+              )
+            : ''
+        )
+      );
+    }
+    const flagged = new Set(d.findings.map((f) => f.file));
+    const others = d.files.filter((f) => !flagged.has(f));
+    if (others.length) {
+      list.append(
+        h(
+          'details',
+          { class: 'section' },
+          h('summary', {}, h('span', { class: 'sTitle', text: 'Outros arquivos (' + others.length + ')' })),
+          ...others.map((f) => h('div', { class: 'stash' }, h('div', { class: 'stashInfo' }, h('span', { class: 'stashName', text: f, title: f })), h('span', { class: 'fileActions' }, btn('Diff', { small: true, onclick: () => post('aiDiff', { file: f }) }))))
+        )
+      );
+    }
+    list.append(btn('Tudo certo — fazer commit', { icon: 'check', kind: 'primary', grow: true, onclick: () => post('aiCommit') }));
+  }
+
+  // ---------- Pontos de restauração ----------
+  function renderRestorePoints() {
+    const list = $('rpList');
+    const saveBtn = $('btnRpSave');
+    if (!list || !saveBtn) return;
+    const points = state.restorePoints || [];
+
+    saveBtn.replaceChildren(icon('history'), h('span', { text: advanced() ? 'git commit-tree + update-ref' : 'Salvar ponto de restauração' }));
+    saveBtn.disabled = state.operation !== 'none';
+    saveBtn.title = 'Guarda uma foto dos seus arquivos agora (inclusive os novos). Não altera nada no projeto.';
+
+    const badge = $('rpBadge');
+    badge.replaceChildren();
+    if (points.length) badge.append(h('span', { class: 'tag soft', text: String(points.length) }));
+
+    list.replaceChildren();
+    if (!points.length) {
+      list.append(h('div', { class: 'empty' }, icon('history'), h('span', { text: 'Nenhum ponto salvo ainda.' })));
+      return;
+    }
+    for (const p of points) {
+      const when = new Date(p.date * 1000).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+      const bits = [h('span', { text: when })];
+      if (p.auto) bits.push(h('span', { class: 'tag soft', text: 'automático' }));
+      bits.push(h('span', { text: p.files === 0 ? 'sem alterações' : p.files === 1 ? '1 arquivo alterado' : p.files + ' arquivos alterados' }));
+      const meta = h('span', { class: 'stashMeta' });
+      bits.forEach((b, i) => {
+        if (i) meta.append(document.createTextNode(' · '));
+        meta.append(b);
+      });
+      list.append(
+        h(
+          'div',
+          { class: 'stash' },
+          h('div', { class: 'stashInfo' }, h('span', { class: 'stashName', text: p.name, title: p.name }), meta),
+          h(
+            'span',
+            { class: 'fileActions' },
+            btn(advanced() ? 'git restore --source' : 'Voltar para este ponto', {
+              icon: 'undo',
+              small: true,
+              kind: 'primary',
+              mono: advanced(),
+              disabled: state.operation !== 'none',
+              title: 'Deixa os seus arquivos exatamente como estavam neste ponto. O estado atual é salvo antes.',
+              onclick: () => post('rpRestore', { hash: p.hash }),
+            }),
+            h('button', { type: 'button', class: 'iconBtn danger', title: advanced() ? 'git update-ref -d' : 'Excluir', 'aria-label': 'Excluir ' + p.name, onclick: () => post('rpDelete', { hash: p.hash }) }, icon('x'))
+          )
+        )
+      );
+    }
+  }
+
   // ---------- Stashes (alterações guardadas) ----------
   function stashName(subject) {
     return (subject || '').replace(/^(WIP )?[Oo]n [^:]+:\s*/, '').replace(/^WIP on [^:]+:\s*/, '') || 'Alterações guardadas';
@@ -1214,10 +1398,19 @@
     if (m.type === 'state') {
       state = m.state;
       render();
+    } else if (m.type === 'aiFocus') {
+      setTab('ai');
+      const d = document.querySelector('details[data-key=aiReview]');
+      if (d) d.open = true;
+    } else if (m.type === 'aiReview') {
+      aiData = m.data;
+      renderAiReview();
+      renderTabs();
     } else if (m.type === 'update') {
       renderUpdateBanner(m.update);
     } else if (m.type === 'config') {
       CFG = { ...CFG, ...m.cfg };
+      applyMotion();
       MAXLEN = typeof CFG.maxLen === 'number' ? CFG.maxLen : 72;
       applyDefaultAction();
       if (state && state.isRepo) renderCommit();

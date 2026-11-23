@@ -19,5 +19,15 @@
   "cfg.defaultAction.commit": "Somente commit (local)",
   "cfg.defaultAction.commitAndPush": "Commit e enviar",
   "cmd.checkUpdates": "Quick Git: Verificar atualizações",
-  "cfg.checkForUpdates": "Uma vez por dia, confere no GitHub se há uma versão mais nova e mostra um aviso com botão de download. Nada é instalado automaticamente. Desative se você instalar por um marketplace que já atualiza a extensão sozinho."
+  "cfg.checkForUpdates": "Uma vez por dia, confere no GitHub se há uma versão mais nova e mostra um aviso com botão de download. Nada é instalado automaticamente. Desative se você instalar por um marketplace que já atualiza a extensão sozinho.",
+  "cfg.autoRestorePoint": "Salva um ponto de restauração automático antes de descartar alterações, para você poder voltar se precisar.",
+  "cmd.aiReview": "Quick Git: Revisar mudanças da IA",
+  "cmd.aiSetup": "Quick Git: Ligar a IA à revisão",
+  "cfg.aiGuard.enabled": "Vigia o projeto e avisa quando uma IA mexe em arquivos com riscos (segredos, .env, CI, comandos perigosos).",
+  "cfg.aiGuard.quietSeconds": "Segundos após a última mudança em arquivo para o AI Guard checar riscos e avisar na hora (padrão 3).",
+  "cfg.aiGuard.commitGate": "Avisa antes do commit quando as mudanças têm riscos.",
+  "cfg.aiGuard.commitGate.off": "Nunca avisar",
+  "cfg.aiGuard.commitGate.critical": "Só riscos críticos (segredos, chaves privadas)",
+  "cfg.aiGuard.commitGate.high": "Riscos críticos e altos",
+  "cfg.animations": "Animações e efeitos visuais no painel do Quick Git. Desligue para o modo leve (mais rápido em computadores mais fracos)."
 }
