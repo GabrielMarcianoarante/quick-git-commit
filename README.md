@@ -112,6 +112,10 @@ O painel tem animações suaves; se preferir algo mais leve, desligue em **Confi
   <img src="docs/images/panel-ai-clean.png" alt="Aba Revisão IA sem riscos encontrados, com os botões Desfazer e Tudo certo" width="320">
 </p>
 
+<p align="center">
+  <img src="docs/images/ai-guard.gif" alt="Animação do AI Guard: o selo de riscos aparece na aba IA e a revisão lista os problemas encontrados" width="320">
+</p>
+
 ### Pontos de restauração: o botão de desfazer do seu projeto
 
 Vai pedir para uma IA refatorar o projeto, ou fazer uma mudança grande por conta própria? Antes, clique em **Salvar ponto de restauração**. A extensão guarda uma "foto" dos seus arquivos (os alterados e os novos, respeitando o `.gitignore`) sem mexer em nada: nem nos arquivos, nem na branch, nem no que você marcou para o commit.
